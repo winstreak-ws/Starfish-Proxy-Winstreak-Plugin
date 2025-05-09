@@ -3,6 +3,12 @@ class Player {
         this.username = username; // Player's username
         this.uuid = uuid;         // Player's UUID
         this.entityId = entityId; // Player's entity ID
+        this.AutoBlockA_VL = 0;
+        this.AutoBlockA_LastAlert = 0;
+        this.swingProgress = 0;
+        this.isUsingItem = false;
+        this.ticksExisted = 0;
+        this.lastUsingTick = 0;
     }
 
     toString() {
@@ -29,13 +35,15 @@ module.exports = (proxyAPI) => {
     proxyAPI.on('serverPacket', ({ client, data, meta }) => {
         // Track player info from the player_info packet
         if (meta.name === 'player_info') {
-            data.data.forEach((player) => {
-                if (data.action === 0 && player.name && player.UUID) { // Add player
-                    igns.set(player.UUID, player.name); // Store the player's name by UUID
-                    // console.log(`Player info added: ${player.name} (${player.UUID})`);
+            if (data.action === 0) {
+                data.data.forEach((player) => {
+                    if (player.name && player.UUID) { // Add player
+                        igns.set(player.UUID, player.name); // Store the player's name by UUID
+                        // console.log(`Player info added: ${player.name} (${player.UUID})`);
 
-                }
-            });
+                    }
+                });
+            }
         }
 
         // Track players rendered in the world from the named_entity_spawn packet
@@ -66,6 +74,58 @@ module.exports = (proxyAPI) => {
                     players.delete(entityId);
                 }
             });
+        }
+
+        if (meta.name === 'entity_metadata') {
+            if (players.has(data.entityId)) {
+                const player = players.get(data.entityId);
+                data.metadata.forEach((entry) => {
+                    if (entry.key === 0 && entry.type === 0) {
+                        if (entry.value === 16) {
+                            player.isUsingItem = true;
+                            // sendChatMessage(client, `Player ${player.username} is using an item.`);
+                        }
+                        else if (entry.value === 0) {
+                            player.isUsingItem = false;
+                            // sendChatMessage(client, `Player ${player.username} is no longer using an item.`); 
+                        }
+                    }
+                });
+            }
+        }
+
+        if (meta.name === 'animation') {
+            if (players.has(data.entityId)) {
+                const player = players.get(data.entityId);
+                if (data.animation === 0) {
+                    player.swingProgress = 6;
+                    // sendChatMessage(client, `${player.username} swung!`);
+                }
+            }
+        }
+
+        if (meta.name === 'entity_look' || meta.name === 'entity_move_look' || meta.name === 'rel_entity_move') {
+            if (players.has(data.entityId)) {
+                const player = players.get(data.entityId);
+                if (player.isUsingItem && player.swingProgress > 0) {
+                    player.AutoBlockA_VL++;
+                    // sendChatMessage(client, `${player.username} AutoBlock level: ${player.AutoBlockA_VL}`);
+                    if (player.AutoBlockA_VL >= 10) {
+                        player.AutoBlockA_VL = 0;
+                        player.AutoBlockA_LastAlert = player.ticksExisted;
+                        sendChatMessage(client, `${player.username} flagged AutoBlock!`);
+                    }
+                } else {
+                    player.AutoBlockA_VL = Math.max(0, player.AutoBlockA_VL - 5);
+                }
+                player.ticksExisted++;
+                if (player.swingProgress > 0) {
+                    player.swingProgress--;
+                }
+                if (player.isUsingItem) {
+                    player.lastUsingTick = player.ticksExisted;
+                }
+            }
         }
     });
 };
