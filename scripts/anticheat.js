@@ -1,10 +1,9 @@
 class Player {
     // Class to represent a player in the world
-
     constructor(username, uuid, entityId) {
-        this.username = username; // Player's username
-        this.uuid = uuid;         // Player's UUID
-        this.entityId = entityId; // Player's entity ID
+        this.username = username;
+        this.uuid = uuid;
+        this.entityId = entityId;
         this.AutoBlockA_VL = 0;
         this.AutoBlockA_LastAlert = 0;
         this.NoSlowA_VL = 0;
@@ -16,10 +15,6 @@ class Player {
         this.ticksExisted = 0;
         this.lastUsingTick = 0;
     }
-
-    toString() {
-        return `${this.username} (${this.uuid}) [Entity ID: ${this.entityId}]`;
-    }
 }
 
 // Packet handling goes here
@@ -27,34 +22,34 @@ module.exports = (proxyAPI) => {
     const players = new Map(); // Map to track players by entityId
     const igns = new Map(); // Map to track player names by UUID
 
-    function sendChatMessage(client, message) {
-        proxyAPI.sendToClient(client, 'chat', {
+    function sendChatMessage(message) {
+        proxyAPI.sendToClient('chat', {
             message: JSON.stringify({ text: ("[§cAC§r] " + message) }),
             position: 0,
             sender: '00000000-0000-0000-0000-000000000000'
         });
     }
 
-    function AutoBlockA(player, client) {
+    function AutoBlockA(player) {
         if (player.isUsingItem && player.swingProgress > 0) {
             player.AutoBlockA_VL++;
             if (player.AutoBlockA_VL >= 10) {
                 player.AutoBlockA_VL = 0;
                 player.AutoBlockA_LastAlert = player.ticksExisted;
-                sendChatMessage(client, `${player.username} flagged AutoBlock!`);
+                sendChatMessage(`${player.username} flagged AutoBlock!`);
             }
         } else {
             player.AutoBlockA_VL = Math.max(0, player.AutoBlockA_VL - 5);
         }
     }
 
-    function NoSlowA(player, client) {
+    function NoSlowA(player) {
         if (player.isUsingItem && player.isSprinting) {
             player.NoSlowA_VL++;
             if (player.NoSlowA_VL >= 10) {
                 player.NoSlowA_VL = 0;
                 player.NoSlowA_LastAlert = player.ticksExisted;
-                sendChatMessage(client, `${player.username} flagged NoSlow!`);
+                sendChatMessage(`${player.username} flagged NoSlow!`);
             }
         } else {
             player.NoSlowA_VL = Math.max(0, player.NoSlowA_VL - 1);
@@ -65,8 +60,9 @@ module.exports = (proxyAPI) => {
         // console.log(`Client Packet: ${meta.name}`, data);
     });
 
-    proxyAPI.on('serverPacket', ({ client, data, meta }) => {
-        // Player usernames are not sent when the player is loaded, so we need to track them here
+    proxyAPI.on('serverPacket', ({ data, meta }) => {
+
+        // Player usernames are not sent when the player is loaded, so we need to track them from player_info packets
         if (meta.name === 'player_info') {
             if (data.action === 0) {
                 data.data.forEach((player) => {
@@ -92,7 +88,6 @@ module.exports = (proxyAPI) => {
         if (meta.name === 'entity_destroy') {
             data.entityIds.forEach((entityId) => {
                 if (players.has(entityId)) {
-                    const player = players.get(entityId);
                     players.delete(entityId);
                 }
             });
@@ -102,19 +97,7 @@ module.exports = (proxyAPI) => {
             if (players.has(data.entityId)) {
                 const player = players.get(data.entityId);
                 data.metadata.forEach((entry) => {
-
-                    // Check if the entry is for item use state
                     if (entry.key === 0 && entry.type === 0) {
-
-                        // Check if the entry is for using an item
-                        // Check if bit 4 is set (using an item)
-                        // if ((entry.value & 0b00010000) !== 0) {
-                        //     player.isUsingItem = true;
-                        // }
-                        // // Check if bit 4 is not set (no longer using an item)
-                        // else {
-                        //     player.isUsingItem = false;
-                        // }
                         player.isCrouching = entry.value & 0x01;
                         player.isSprinting = entry.value & 0x08;
                         player.isUsingItem = entry.value & 0x10;
@@ -140,8 +123,8 @@ module.exports = (proxyAPI) => {
                 const player = players.get(data.entityId);
 
                 // Run checks
-                AutoBlockA(player, client);
-                NoSlowA(player, client);
+                AutoBlockA(player);
+                NoSlowA(player);
 
                 // Update player state
                 player.ticksExisted++;

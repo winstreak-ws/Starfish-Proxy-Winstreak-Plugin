@@ -3,26 +3,46 @@ const mc = require('minecraft-protocol');
 const EventEmitter = require('events');
 const fs = require('fs');
 
-class ProxyAPI extends EventEmitter {}
+// Configuration
+const proxyPort = 25565; // Port for the proxy to listen on
+const targetHost = 'anticheat-test.com'; // Target server hostname
+const targetPort = 25565; // Target server port
+
+class ProxyAPI extends EventEmitter {
+    constructor() {
+        super();
+        this.client = null; // Will hold the client connection
+        this.targetClient = null; // Will hold the target server connection
+    }
+
+    sendToClient(metaName, data) {
+        try {
+            if (this.client) {
+                this.client.write(metaName, data);
+                // console.log(`Sent packet to client: ${metaName}`);
+            } else {
+                console.error('No client connected to send data to.');
+            }
+        } catch (err) {
+            console.error(`Error sending packet to client: ${err.message}`);
+        }
+    }
+
+    sendToServer(metaName, data) {
+        try {
+            if (this.targetClient) {
+                this.targetClient.write(metaName, data);
+                // console.log(`Sent packet to server: ${metaName}`);
+            } else {
+                console.error('No target server connected to send data to.');
+            }
+        } catch (err) {
+            console.error(`Error sending packet to server: ${err.message}`);
+        }
+    }
+}
+
 const proxyAPI = new ProxyAPI();
-
-proxyAPI.sendToClient = (client, metaName, data) => {
-    try {
-        client.write(metaName, data);
-        // console.log(`Sent packet to client: ${metaName}`);
-    } catch (err) {
-        console.error(`Error sending packet to client: ${err.message}`);
-    }
-};
-
-proxyAPI.sendToServer = (targetClient, metaName, data) => {
-    try {
-        targetClient.write(metaName, data);
-        // console.log(`Sent packet to server: ${metaName}`);
-    } catch (err) {
-        console.error(`Error sending packet to server: ${err.message}`);
-    }
-};
 
 // Load all scripts from the "scripts" folder
 const scriptsFolder = path.join(__dirname, 'scripts');
@@ -31,11 +51,6 @@ fs.readdirSync(scriptsFolder).forEach((file) => {
         require(path.join(scriptsFolder, file))(proxyAPI);
     }
 });
-
-// Configuration
-const proxyPort = 25565; // Port for the proxy to listen on
-const targetHost = 'anticheat-test.com'; // Target server hostname
-const targetPort = 25565; // Target server port
 
 // Create the proxy server
 const server = mc.createServer({
@@ -58,6 +73,10 @@ server.on('login', async (client) => {
             auth: 'microsoft', // Use built-in Microsoft authentication
         });
 
+        // Assign the client and targetClient to proxyAPI
+        proxyAPI.client = client;
+        proxyAPI.targetClient = targetClient;
+
         targetClient.on('session', () => {
             console.log('Login to target server successful.');
         });
@@ -68,7 +87,7 @@ server.on('login', async (client) => {
 
         // Pipe data between the client and the target server
         client.on('packet', (data, meta) => {
-            proxyAPI.emit('clientPacket', { data, meta, client, targetClient });
+            proxyAPI.emit('clientPacket', { data, meta });
 
             if (client.state === mc.states.PLAY && targetClient.state === mc.states.PLAY) {
                 try {
@@ -82,14 +101,14 @@ server.on('login', async (client) => {
         });
 
         targetClient.on('packet', (data, meta) => {
-            proxyAPI.emit('serverPacket', { data, meta, client, targetClient });
+            proxyAPI.emit('serverPacket', { data, meta });
 
             if (client.state === mc.states.PLAY && targetClient.state === mc.states.PLAY) {
                 try {
                     client.write(meta.name, data);
                     if (meta.name === 'set_compression') {
-                        client.compressionThreshold = data.threshold
-                      }
+                        client.compressionThreshold = data.threshold;
+                    }
                 } catch (err) {
                     console.error(`Error forwarding packet to client: ${err.message}`);
                 }
@@ -102,21 +121,29 @@ server.on('login', async (client) => {
         client.on('end', () => {
             console.log(`Player ${client.username} disconnected from the proxy.`);
             targetClient.end();
+            proxyAPI.client = null;
+            proxyAPI.targetClient = null;
         });
 
         targetClient.on('end', () => {
             console.log(`Connection to target server ended for ${client.username}.`);
             client.end();
+            proxyAPI.client = null;
+            proxyAPI.targetClient = null;
         });
 
         client.on('error', (err) => {
             console.error(`Client error: ${err.message}`);
             targetClient.end();
+            proxyAPI.client = null;
+            proxyAPI.targetClient = null;
         });
 
         targetClient.on('error', (err) => {
             console.error(`Target server error: ${err.message}`);
             client.end();
+            proxyAPI.client = null;
+            proxyAPI.targetClient = null;
         });
     } catch (err) {
         console.error(`Authentication failed for ${client.username}: ${err.message}`);
