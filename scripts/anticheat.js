@@ -816,7 +816,7 @@ class AnticheatSystem {
         const deltaY = currentPos.y - pastPos.y;
         const verticalSpeed = deltaY / ticksElapsed;
 
-        const isToweringSpeed = verticalSpeed > 0.35;
+        const isToweringSpeed = verticalSpeed > 0.5;
 
         if (isToweringSpeed) {
             player.violations.TowerA += 2;
