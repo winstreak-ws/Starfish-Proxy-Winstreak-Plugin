@@ -43,7 +43,7 @@ if (fs.existsSync(configSource)) {
 
 // Build the executable
 try {
-    execSync('pkg proxy.js --target node18-win-x64 --output build/minecraft-proxy.exe', { stdio: 'inherit' });
+    execSync('pkg src/proxy.js --target node18-win-x64 --output build/minecraft-proxy.exe', { stdio: 'inherit' });
     console.log('Build completed: build/minecraft-proxy.exe');
 } catch (err) {
     console.error('Build failed:', err.message);

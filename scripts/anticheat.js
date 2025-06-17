@@ -11,7 +11,7 @@ const PLUGIN_INFO = {
 const DEFAULT_CHECKS_CONFIG = {
     NoSlowA: { enabled: true, alerts: true, sound: true, vl: 15, cooldown: 2000, description: "Detects sprinting while using items that should slow you down (eating food, drawing bow, blocking sword)." },
     AutoBlockA: { enabled: true, alerts: true, sound: true, vl: 15, cooldown: 2000, description: "Detects attacking while blocking with a sword." },
-    RotationA: { enabled: true, alerts: true, sound: true, vl: 20, cooldown: 1000, description: "Detects impossible head/body rotations (invalid pitch)." },
+    RotationA: { enabled: true, alerts: true, sound: true, vl: 20, cooldown: 2000, description: "Detects impossible head/body rotations (invalid pitch)." },
     ScaffoldA: { enabled: true, alerts: true, sound: true, vl: 10, cooldown: 2000, description: "Detects diagonal double-shifting legit scaffold patterns." },
     ScaffoldB: { enabled: true, alerts: true, sound: true, vl: 10, cooldown: 2000, description: "Detects blatant scaffold (fast movement & snappy rotations" },
     ScaffoldC: { enabled: true, alerts: true, sound: true, vl: 5, cooldown: 2000, description: "Detects high-speed backward bridging with air time (typical of keep-y)" },
@@ -181,6 +181,9 @@ class AnticheatSystem {
         this.uuidToDisplayName = new Map();
         this.userPosition = null;
         
+        // Dynamic plugin prefix using proxy prefix
+        this.PLUGIN_PREFIX = `§8[${this.proxyAPI.proxyPrefix}§8-§cAC§8]§r`;
+        
         this.config = {
             enabled: true,
             checks: JSON.parse(JSON.stringify(DEFAULT_CHECKS_CONFIG)),
@@ -191,8 +194,7 @@ class AnticheatSystem {
     }
     
     registerHandlers() {
-        // track other players in the world
-        this.proxyAPI.on('serverPacket', ({ username, player, data, meta }) => {
+        this.proxyAPI.on('serverPacketMonitor', ({ username, player, data, meta }) => {
             if (!player) return;
             
             switch (meta.name) {
@@ -231,7 +233,7 @@ class AnticheatSystem {
             }
         });
         
-        this.proxyAPI.on('clientPacket', ({ username, player, data, meta }) => {
+        this.proxyAPI.on('clientPacketMonitor', ({ username, player, data, meta }) => {
             if (!player) return;
             
             if (meta.name === 'position' || meta.name === 'position_look') {
@@ -518,7 +520,7 @@ class AnticheatSystem {
     }
     
     checkAutoBlockA(player, config) {
-        // detect swinging while using item (autoblock)
+        // detect swinging while using sword
         if (player.isUsingItem && player.swingProgress > 0 && player.isHoldingSword()) {
             player.violations.AutoBlockA++;
             
@@ -552,7 +554,7 @@ class AnticheatSystem {
     }
     
     checkScaffoldA(player, config) {
-        // detect double-shifting during diagonal bridging (legit scaffold behavior)
+        // detect double-shifting during diagonal bridging (legit scaffold)
         const lookingDown = player.pitch >= 70;
 
         const dx = player.position.x - player.lastPosition.x;
@@ -685,6 +687,7 @@ class AnticheatSystem {
     }
 
     checkScaffoldC(player, config) {
+        // detect scaffold keep-y behavior
         const lookingDown = player.pitch >= 70;
         const moveYaw = player.getMoveYaw();
         const ticksExisted = player.ticksExisted;
@@ -840,7 +843,7 @@ class AnticheatSystem {
         if (!currentPlayer) return;
 
         if (checkConfig.alerts) {
-            const message = `§8[§cAC§8] ${player.displayName} §7flagged §c${checkName} §8(§7VL: ${vl}§8)`;
+            const message = `${this.PLUGIN_PREFIX} ${player.displayName} §7flagged §c${checkName} §8(§7VL: ${vl}§8)`;
             this.proxyAPI.sendChatMessage(message);
         }
         
@@ -857,11 +860,10 @@ class AnticheatSystem {
     }
 }
 
-// export as plugin
+
 module.exports = (proxyAPI) => {
     const anticheat = new AnticheatSystem(proxyAPI);
-    
-    // register plugin with proxy
+
     proxyAPI.registerPlugin(PLUGIN_INFO);
 
     function findCheckName(userInput) {
@@ -875,149 +877,128 @@ module.exports = (proxyAPI) => {
         return null;
     }
 
-    proxyAPI.on('clientPacket', (event) => {
-        if (event.meta.name !== 'chat' || !event.data.message.startsWith('/ac')) {
-            return;
-        }
-
-        if (!event.player) return;
-
-        const { username, data } = event;
-        const args = data.message.split(' ');
-        const subCommand = (args[1] || 'help').toLowerCase();
-        
-        let response = '';
-
-        switch (subCommand) {
-            case 'help':
-                response = 
-`§6-- AntiCheat Commands --
-§e/ac info <check> §7- Show check description and settings.
-§e/ac toggle <check> §7- Toggle §lalerts§r§7 for a check.
-§e/ac sound <check> §7- Toggle sound for a check.
-§e/ac vl <check> <vl> §7- Set a check's violation level.
-§e/ac cooldown <check> <sec> §7- Set a check's alert cooldown.
-§e/ac reset <check> §7- Reset a check to default settings.
-§6-- Global Commands --
-§e/ac checks §7- Shows the status of all checks.
-§e/ac on|off §7- Toggle the entire anticheat system.
-§e/ac debug §7- Toggle debug mode.`;
-                break;
-
-            case 'toggle': {
-                const checkName = findCheckName(args[2]);
-                if (checkName) {
-                    anticheat.config.checks[checkName].alerts = !anticheat.config.checks[checkName].alerts;
-                    const status = anticheat.config.checks[checkName].alerts ? '§aenabled' : '§cdisabled';
-                    response = `§6[AC] §eAlerts for ${checkName} are now ${status}§e.`;
-                } else {
-                    response = `§cUsage: /ac toggle <check_name>. Use /ac checks to see available checks.`;
-                }
-                break;
+    proxyAPI.registerCommands('anticheat', {
+        debug: {
+            description: 'Toggle debug mode',
+            handler: (client) => {
+                anticheat.config.debug = !anticheat.config.debug;
+                const debugStatus = anticheat.config.debug ? '§aenabled' : '§cdisabled';
+                proxyAPI.sendChatMessage(`${anticheat.PLUGIN_PREFIX} §eDebug mode is now ${debugStatus}§e.`);
             }
-            
-            case 'sound': {
-                const checkName = findCheckName(args[2]);
+        },
+        config: {
+            description: 'Show current anticheat configuration',
+            handler: (client) => {
+                const pluginStatus = proxyAPI.isPluginEnabled('anticheat') ? '§aEnabled' : '§cDisabled';
+                const debugStatus = anticheat.config.debug ? '§aOn' : '§cOff';
+                
+                let configList = `§c========= Anticheat Config =========\n`;
+                configList += `§ePlugin: ${pluginStatus}\n`;
+                configList += `§eDebug Mode: ${debugStatus}\n`;
+                configList += `§c=====================================\n`;
+                
+                for (const [name, check] of Object.entries(anticheat.config.checks)) {
+                    const status = check.status ? '§aEnabled' : '§cDisabled';
+                    const sound = check.sound ? '§aOn' : '§cOff';
+                    configList += `§6${name}§r: ${status} | Sound: ${sound} | VL: §b${check.vl}§r | Cooldown: §b${check.cooldown / 1000}s§r\n`;
+                }
+                configList += `§c=====================================`;
+                
+                proxyAPI.sendChatMessage(configList);
+            }
+        },
+
+        toggle: {
+            description: 'Toggle a check on/off completely',
+            usage: '<check_name>',
+            handler: (client, args) => {
+                const checkName = findCheckName(args[0]);
+                if (checkName) {
+                    anticheat.config.checks[checkName].enabled = !anticheat.config.checks[checkName].enabled;
+                    const status = anticheat.config.checks[checkName].enabled ? '§aenabled' : '§cdisabled';
+                    proxyAPI.sendChatMessage(`${anticheat.PLUGIN_PREFIX} §e${checkName} is now ${status}§e.`);
+                } else {
+                    proxyAPI.sendChatMessage(`§cUnknown check. Use /anticheat checks to see available checks.`);
+                }
+            }
+        },
+        
+        sound: {
+            description: 'Toggle sound for a check',
+            usage: '<check_name>',
+            handler: (client, args) => {
+                const checkName = findCheckName(args[0]);
                 if (checkName) {
                     anticheat.config.checks[checkName].sound = !anticheat.config.checks[checkName].sound;
                     const status = anticheat.config.checks[checkName].sound ? '§aenabled' : '§cdisabled';
-                    response = `§6[AC] §eSound for ${checkName} is now ${status}§e.`;
+                    proxyAPI.sendChatMessage(`${anticheat.PLUGIN_PREFIX} §eSound for ${checkName} is now ${status}§e.`);
                 } else {
-                    response = `§cUsage: /ac sound <check_name>.`;
+                    proxyAPI.sendChatMessage(`§cUnknown check.`);
                 }
-                break;
             }
-
-            case 'vl': {
-                const checkName = findCheckName(args[2]);
-                const value = parseInt(args[3]);
+        },
+        
+        vl: {
+            description: "Set a check's violation level",
+            usage: '<check_name> <level>',
+            handler: (client, args) => {
+                const checkName = findCheckName(args[0]);
+                const value = parseInt(args[1]);
                 if (checkName && !isNaN(value) && value > 0) {
                     anticheat.config.checks[checkName].vl = value;
-                    response = `§6[AC] §e${checkName} VL set to ${value}.`;
+                    proxyAPI.sendChatMessage(`${anticheat.PLUGIN_PREFIX} §e${checkName} VL set to ${value}.`);
                 } else {
-                    response = '§cUsage: /ac vl <check> <number>';
+                    proxyAPI.sendChatMessage('§cUsage: /anticheat vl <check> <number>');
                 }
-                break;
             }
+        },
 
-            case 'cooldown': {
-                const checkName = findCheckName(args[2]);
-                const value = parseInt(args[3]);
+        cooldown: {
+            description: "Set a check's alert cooldown",
+            usage: '<check_name> <seconds>',
+            handler: (client, args) => {
+                const checkName = findCheckName(args[0]);
+                const value = parseInt(args[1]);
                 if (checkName && !isNaN(value) && value >= 0) {
                     anticheat.config.checks[checkName].cooldown = value * 1000;
-                    response = `§6[AC] §e${checkName} cooldown set to ${value}s.`;
+                    proxyAPI.sendChatMessage(`${anticheat.PLUGIN_PREFIX} §e${checkName} cooldown set to ${value}s.`);
                 } else {
-                    response = '§cUsage: /ac cooldown <check> <seconds>';
+                    proxyAPI.sendChatMessage('§cUsage: /anticheat cooldown <check> <seconds>');
                 }
-                break;
             }
+        },
 
-            case 'info': {
-                const checkName = findCheckName(args[2]);
+        info: {
+            description: 'Show check description and settings',
+            usage: '<check_name>',
+            handler: (client, args) => {
+                const checkName = findCheckName(args[0]);
                 if (checkName) {
                     const check = anticheat.config.checks[checkName];
-                    response = `§6--- ${checkName} Info ---\n` +
-                               `§eDescription: §7${check.description}\n` +
-                               `§eAlerts: ${check.alerts ? '§aON' : '§cOFF'} | §eSound: ${check.sound ? '§aON' : '§cOFF'}\n` +
-                               `§eVL: §b${check.vl} §r| §eCooldown: §b${check.cooldown / 1000}s`;
+                    const response = `§6--- ${checkName} Info ---\n` +
+                                   `§eDescription: §7${check.description}\n` +
+                                   `§eAlerts: ${check.alerts ? '§aON' : '§cOFF'} | §eSound: ${check.sound ? '§aON' : '§cOFF'}\n` +
+                                   `§eVL: §b${check.vl} §r| §eCooldown: §b${check.cooldown / 1000}s`;
+                    proxyAPI.sendChatMessage(response);
                 } else {
-                    response = '§cUsage: /ac info <check_name>.';
+                    proxyAPI.sendChatMessage('§cUnknown check.');
                 }
-                break;
             }
-            
-            case 'reset': {
-                const checkName = findCheckName(args[2]);
+        },
+        
+        reset: {
+            description: 'Reset a check to default settings',
+            usage: '<check_name>',
+            handler: (client, args) => {
+                const checkName = findCheckName(args[0]);
                 if (checkName) {
                     anticheat.config.checks[checkName] = JSON.parse(JSON.stringify(DEFAULT_CHECKS_CONFIG[checkName]));
-                    response = `§6[AC] §e${checkName} has been reset to defaults.`;
+                    proxyAPI.sendChatMessage(`${anticheat.PLUGIN_PREFIX} §e${checkName} has been reset to defaults.`);
                 } else {
-                    response = `§cUsage: /ac reset <check_name>.`;
+                    proxyAPI.sendChatMessage(`§cUnknown check.`);
                 }
-                break;
             }
-            
-            case 'checks': {
-                let statusList = '§6========= Anticheat Checks =========\n';
-                for (const [name, check] of Object.entries(anticheat.config.checks)) {
-                    const alerts = check.alerts ? '§aON' : '§cOFF';
-                    const sound = check.sound ? '§aON' : '§cOFF';
-                    const vl = `§b${check.vl}`;
-                    const cooldown = `§b${check.cooldown / 1000}s`;
-                    
-                    statusList += `§6${name}§r:\n`;
-                    statusList += `  §8Alerts: ${alerts}§r §8| §8Sound: ${sound}§r\n`;
-                    statusList += `  §8VL: ${vl}§r §8| §8Cooldown: ${cooldown}§r\n`;
-                    statusList += `  §8Info: §7${check.description}\n\n`;
-                }
-                statusList += '§6====================================';
-                response = statusList;
-                break;
-            }
-
-            case 'on':
-            case 'off':
-                anticheat.config.enabled = (subCommand === 'on');
-                const masterStatus = anticheat.config.enabled ? '§aenabled' : '§cdisabled';
-                response = `§6[AC] §eAnticheat system is now ${masterStatus}§e.`;
-                break;
-
-            case 'debug':
-                anticheat.config.debug = !anticheat.config.debug;
-                const debugStatus = anticheat.config.debug ? '§aenabled' : '§cdisabled';
-                response = `§6[AC] §eDebug mode is now ${debugStatus}§e.`;
-                break;
-
-            default:
-                response = '§cUnknown command. Use /ac help for a list of commands.';
-                break;
         }
-
-        if (response) {
-            proxyAPI.sendChatMessage(response);
-        }
-
-        event.cancelled = true;
     });
 
     return PLUGIN_INFO;

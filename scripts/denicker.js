@@ -14,6 +14,9 @@ class DenickerSystem {
         this.parsedPlayers = new Set();
         this.noColorTicks = new Map();
         
+        // Dynamic plugin prefix using proxy prefix
+        this.PLUGIN_PREFIX = `§8[${this.proxyAPI.proxyPrefix}§8-§cDN§8]§r`;
+        
         this.config = {
             enabled: true,
             showFailedDenicks: true,
@@ -22,6 +25,80 @@ class DenickerSystem {
         };
         
         this.registerHandlers();
+    }
+    
+    /**
+     * Extracts clean text from Minecraft JSON text components (same as anticheat)
+     */
+    extractTextFromJSON(jsonText) {
+        if (typeof jsonText === 'string') {
+            return jsonText;
+        }
+        
+        let result = '';
+        
+        if (jsonText.text) {
+            result += jsonText.text;
+        }
+        
+        if (jsonText.extra && Array.isArray(jsonText.extra)) {
+            for (const extra of jsonText.extra) {
+                if (typeof extra === 'string') {
+                    result += extra;
+                } else if (extra.text) {
+                    result += extra.text;
+                }
+            }
+        }
+        
+        return result || 'Unknown';
+    }
+    
+    /**
+     * Extracts team color from a player's display name
+     */
+    extractTeamColor(displayName) {
+        if (!displayName || typeof displayName !== 'string') return '';
+        
+        // Look for color codes at the beginning of the display name
+        const colorMatch = displayName.match(/^(§[0-9a-frk-o])/);
+        if (colorMatch) {
+            return colorMatch[1];
+        }
+        
+        // If display name is JSON, try to extract color from it
+        try {
+            const parsed = JSON.parse(displayName);
+            if (parsed.color) {
+                // Convert named colors to color codes
+                const colorMap = {
+                    'red': '§c', 'blue': '§9', 'green': '§a', 'yellow': '§e',
+                    'aqua': '§b', 'light_purple': '§d', 'gold': '§6', 'gray': '§7',
+                    'dark_red': '§4', 'dark_blue': '§1', 'dark_green': '§2',
+                    'dark_aqua': '§3', 'dark_purple': '§5', 'dark_gray': '§8'
+                };
+                return colorMap[parsed.color] || '';
+            }
+            
+            // Look for color in extra components
+            if (parsed.extra && Array.isArray(parsed.extra)) {
+                for (const extra of parsed.extra) {
+                    if (extra.color && typeof extra.color === 'string') {
+                        const colorMap = {
+                            'red': '§c', 'blue': '§9', 'green': '§a', 'yellow': '§e',
+                            'aqua': '§b', 'light_purple': '§d', 'gold': '§6', 'gray': '§7',
+                            'dark_red': '§4', 'dark_blue': '§1', 'dark_green': '§2',
+                            'dark_aqua': '§3', 'dark_purple': '§5', 'dark_gray': '§8'
+                        };
+                        return colorMap[extra.color] || '';
+                    }
+                }
+            }
+        } catch (e) {
+            // Not JSON, continue with string parsing
+        }
+        
+        return '';
     }
     
     registerHandlers() {
@@ -58,7 +135,17 @@ class DenickerSystem {
             
             if (this.parsedPlayers.has(player.name)) return;
             
-            const displayName = player.displayName || player.name;
+            // Extract display name like anticheat does
+            let displayName = player.name;
+            if (player.displayName) {
+                try {
+                    const parsed = JSON.parse(player.displayName);
+                    displayName = this.extractTextFromJSON(parsed);
+                } catch (e) {
+                    displayName = player.displayName;
+                }
+            }
+            
             const hasColor = displayName.includes('§');
             
             if (!hasColor) {
@@ -71,7 +158,7 @@ class DenickerSystem {
             if (player.properties) {
                 player.properties.forEach(prop => {
                     if (prop.name === 'textures' && prop.value) {
-                        this.parseSkinData(player, prop.value);
+                        this.parseSkinData(player, prop.value, displayName);
                     }
                 });
             }
@@ -86,7 +173,7 @@ class DenickerSystem {
         if (!uuid || uuid.charAt(14) !== '1') return;
     }
     
-    parseSkinData(player, encodedData) {
+    parseSkinData(player, encodedData, displayName) {
         try {
             const jsonStr = Buffer.from(encodedData, 'base64').toString('utf8');
             const skinData = JSON.parse(jsonStr);
@@ -98,20 +185,24 @@ class DenickerSystem {
             const urlParts = skinData.textures.SKIN.url.split('/');
             const hash = urlParts[4] || urlParts[urlParts.length - 1];
             
-            const displayName = this.cleanName(player.displayName || player.name);
+            const cleanDisplayName = this.cleanName(displayName);
             
             if (KNOWN_NICK_SKINS.has(hash) && this.config.showFailedDenicks) {
-                this.sendAlert(`${displayName} §7is nicked.`);
+                this.sendAlert(`${cleanDisplayName} §7is nicked.`);
                 return;
             }
             
             const profileName = skinData.profileName || '';
             if (!profileName) return;
             
-            this.sendAlert(`${displayName} §7is nicked as §c${profileName}§7.`);
+            // Extract team color and apply it to the real name
+            const teamColor = this.extractTeamColor(player.displayName || player.name);
+            const coloredProfileName = teamColor ? `${teamColor}${profileName}` : `§f${profileName}`;
+            
+            this.sendAlert(`${cleanDisplayName} §7is nicked as ${coloredProfileName}§7.`);
             
             if (this.config.debug) {
-                console.log(`[DENICKER] Parsed ${player.name}: hash=${hash}, profileName=${profileName}`);
+                console.log(`[DENICKER] Parsed ${player.name}: hash=${hash}, profileName=${profileName}, teamColor=${teamColor}`);
             }
             
         } catch (err) {
@@ -136,7 +227,7 @@ class DenickerSystem {
     
     sendAlert(message) {
         setTimeout(() => {
-            const fullMessage = `§8[§cDenicker§8] §r${message}`;
+            const fullMessage = `${this.PLUGIN_PREFIX} §r${message}`;
             
             if (this.proxyAPI.currentPlayer) {
                 this.proxyAPI.sendToClient('chat', {
@@ -156,82 +247,56 @@ module.exports = (proxyAPI) => {
     
     proxyAPI.registerPlugin(PLUGIN_INFO);
     
-    proxyAPI.on('clientPacket', (event) => {
-        if (event.meta.name !== 'chat' || !event.data.message.startsWith('/denicker')) {
-            return;
-        }
-
-        if (!event.player) return;
-
-        const { username, data } = event;
-        const args = data.message.split(' ');
-        const subCommand = (args[1] || 'help').toLowerCase();
-        
-        let response = '';
-
-        switch (subCommand) {
-            case 'help':
-                response = 
-`§b-- Denicker Commands --
-§e/denicker help §7- Show this help message.
-§e/denicker status §7- Show current denicker settings.
-§e/denicker toggle §7- Toggle denicker on/off.
-§e/denicker failed §7- Toggle showing failed denicks.
-§e/denicker debug §7- Toggle debug mode.
-§e/denicker delay <ms> §7- Set alert delay in milliseconds.`;
-                break;
-                
-            case 'status':
-                const enabledStatus = denicker.config.enabled ? '§aenabled' : '§cdisabled';
-                const failedStatus = denicker.config.showFailedDenicks ? '§aON' : '§cOFF';
-                const debugStatus = denicker.config.debug ? '§aON' : '§cOFF';
-                response = 
-`§b-- Denicker Status --
-§eSystem: ${enabledStatus}
-§eFailed Denicks: ${failedStatus}
-§eDebug Mode: ${debugStatus}
-§eAlert Delay: §b${denicker.config.alertDelay}ms`;
-                break;
-                
-            case 'toggle':
-                denicker.config.enabled = !denicker.config.enabled;
-                const toggledStatus = denicker.config.enabled ? '§aenabled' : '§cdisabled';
-                response = `§b[Denicker] §eSystem ${toggledStatus}§e.`;
-                break;
-                
-            case 'failed':
-                denicker.config.showFailedDenicks = !denicker.config.showFailedDenicks;
-                const failedToggleStatus = denicker.config.showFailedDenicks ? '§aON' : '§cOFF';
-                response = `§b[Denicker] §eShow failed denicks: ${failedToggleStatus}§e.`;
-                break;
-                
-            case 'debug':
+    proxyAPI.registerCommands('denicker', {
+        debug: {
+            description: 'Toggle debug mode',
+            handler: (client) => {
                 denicker.config.debug = !denicker.config.debug;
                 const debugToggleStatus = denicker.config.debug ? '§aenabled' : '§cdisabled';
-                response = `§b[Denicker] §eDebug mode ${debugToggleStatus}§e.`;
-                break;
+                proxyAPI.sendChatMessage(`${denicker.PLUGIN_PREFIX} §eDebug mode ${debugToggleStatus}§e.`);
+            }
+        },
+        config: {
+            description: 'Show current denicker configuration',
+            handler: (client) => {
+                const pluginStatus = proxyAPI.isPluginEnabled('denicker') ? '§aEnabled' : '§cDisabled';
+                const debugStatus = denicker.config.debug ? '§aOn' : '§cOff';
+                const allNicksStatus = denicker.config.showAllNicks ? '§aOn' : '§cOff';
                 
-            case 'delay': {
-                const delay = parseInt(args[2]);
+                let configList = `§c========= Denicker Config =========\n`;
+                configList += `§ePlugin: ${pluginStatus}\n`;
+                configList += `§eDebug Mode: ${debugStatus}\n`;
+                configList += `§c=====================================\n`;
+                configList += `§eAlert For All Nicks: ${allNicksStatus}\n`;
+                configList += `§eAlert Delay: §b${denicker.config.alertDelay}ms\n`;
+                configList += `§c=====================================`;
+                
+                proxyAPI.sendChatMessage(configList);
+            }
+        },
+        
+        allnicks: {
+            description: 'Toggle alerts for unknown nicks in chat, in addition to denicked players',
+            handler: (client) => {
+                denicker.config.showAllNicks = !denicker.config.showAllNicks;
+                const allNicksToggleStatus = denicker.config.showAllNicks ? '§aOn' : '§cOff';
+                proxyAPI.sendChatMessage(`${denicker.PLUGIN_PREFIX} §eShow all nicks: ${allNicksToggleStatus}§e.`);
+            }
+        },
+        
+        delay: {
+            description: 'Set alert delay in milliseconds',
+            usage: '<milliseconds>',
+            handler: (client, args) => {
+                const delay = parseInt(args[0]);
                 if (!isNaN(delay) && delay >= 0) {
                     denicker.config.alertDelay = delay;
-                    response = `§b[Denicker] §eAlert delay set to ${delay}ms.`;
+                    proxyAPI.sendChatMessage(`${denicker.PLUGIN_PREFIX} §eAlert delay set to ${delay}ms.`);
                 } else {
-                    response = '§cUsage: /denicker delay <milliseconds>';
+                    proxyAPI.sendChatMessage('§cUsage: /denicker delay <milliseconds>');
                 }
-                break;
             }
-                
-            default:
-                response = '§cUnknown command. Use /denicker help for available commands.';
-                break;
         }
-
-        if (response) {
-            proxyAPI.sendChatMessage(response);
-        }
-
-        event.cancelled = true;
     });
     
     return PLUGIN_INFO;
