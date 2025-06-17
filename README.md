@@ -2,6 +2,15 @@
 
 A personal Minecraft proxy server with Microsoft authentication, dynamic server switching, and advanced plugin system.
 
+## TODO
+
+#### Minor
+- Redo config menu (clickable chat messages, nicer looking formatting)
+
+#### Major
+- Urchin integration plugin (auto-blacklisting, blacklisted player alerts)
+- Hypixel utils plugin (auto /who, client tags in tab, session tracking)
+
 ## Features
 
 - Single-player personal proxy (runs locally, supports one player)
