@@ -2,6 +2,15 @@
 
 A personal Minecraft proxy server with Microsoft authentication, dynamic server switching, and advanced plugin system.
 
+## TODO
+
+#### Minor
+- Redo config menu (clickable chat messages, nicer looking formatting)
+
+#### Major
+- Urchin integration plugin (auto-blacklisting, blacklisted player alerts)
+- Hypixel utils plugin (auto /who, client tags in tab, session tracking)
+
 ## Features
 
 - Single-player personal proxy (runs locally, supports one player)
@@ -10,6 +19,16 @@ A personal Minecraft proxy server with Microsoft authentication, dynamic server 
 - Advanced plugin system with anticheat and denicker included
 
 ## Quick Start
+
+1. Install latest from Releases tab
+
+2. Extract the .zip and run the executable
+
+3. Connect with any Minecraft 1.8.9 Client:
+   - Add server: `localhost:25565` 
+   - Connect to trigger authentication
+   - Complete Microsoft login in the browser that opens automatically
+   - Reconnect after authentication completes
 
 ### Installation
 
@@ -24,7 +43,7 @@ npm install
 node src/proxy.js
 ```
 
-2. Connect with Minecraft:
+2. Connect with any Minecraft 1.8.9 Client:
    - Add server: `localhost:25565` 
    - Connect to trigger authentication
    - Complete Microsoft login in the browser that opens automatically
