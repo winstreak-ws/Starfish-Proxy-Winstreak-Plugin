@@ -4,17 +4,9 @@ A powerful and user-friendly Minecraft proxy server with built-in anticheat dete
 
 ## Features
 
-- **🚀 Easy Setup**: Automatic Microsoft account authentication on first connect
-- **🔄 Server Switching**: Change servers without restarting the proxy
-- **🛡️ Advanced AntiCheat**: Detects various cheats including:
-  - NoSlow (moving at full speed while using items)
-  - AutoBlock (attacking while blocking)
-  - Velocity/Knockback modifications
-  - Invalid rotations
-  - Scaffold cheats
-- **🎭 Denicker System**: Detects nicked players by analyzing skin data
-- **📦 Plugin System**: Easy to extend with new features
-- **⏰ No Timeouts**: Stay connected while authenticating
+- **Easy Setup**: Automatic Microsoft account authentication on first connect
+- **Server Switching**: Change servers without restarting the proxy
+- **Plugin System**: Create your own plugin or use one of the provided ones
 
 ## Quick Start
 
@@ -49,30 +41,6 @@ node proxy.js
 - `/addserver <name> <host:port>` - Save a server for quick access
 - `/removeserver <name>` - Remove a saved server
 
-### 🛡️ AntiCheat Commands
-
-#### Per-Check Commands
-- `/ac info <check>` - Show check description and settings.
-- `/ac toggle <check>` - Toggle alerts for a check.
-- `/ac sound <check>` - Toggle the "ding" sound for a check.
-- `/ac vl <check> <number>` - Set the violation level needed to flag.
-- `/ac cooldown <check> <seconds>` - Set the time between flags for a check.
-- `/ac reset <check>` - Reset a check to its default settings.
-
-#### Global Commands
-- `/ac help` - Shows all available anticheat commands.
-- `/ac checks` - Shows the status of all checks (alerts and sounds).
-- `/ac on|off` - Turns the entire anticheat system on or off.
-- `/ac debug` - Toggles debug mode for developers.
-
-### 🎭 Denicker Commands
-
-- `/denick help` - Show available commands
-- `/denick status` - Check if denicker is enabled
-- `/denick toggle` - Enable/disable denicker
-- `/denick failed` - Toggle showing failed denick attempts
-- `/denick debug` - Toggle debug mode
-
 ### 📚 General
 
 - `/help` or `/proxy` - Show all proxy commands
@@ -92,11 +60,6 @@ When you switch servers, the proxy will:
 2. Disconnect you with a message
 3. Use the new server when you reconnect
 
-
-
-### AntiCheat False Positives
-
-- Use `/ac check <CheckName> toggle` to disable problematic checks
 
 ## Extending the Proxy
 
