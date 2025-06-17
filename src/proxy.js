@@ -13,8 +13,8 @@ const CommandHandler = require('./command-handler');
 const PluginManager = require('./plugin-manager');
 
 const PROXY_VERSION = '1.8.9';
-const PROXY_NAME = '§6S§eta§fr§bfi§3sh §5Proxy§r'; // Configurable proxy display name
-const PROXY_PREFIX = '§6S§eta§fr§bfi§3sh'; // Configurable chat prefix for alerts
+const PROXY_NAME = '§6S§eta§fr§bfi§3sh §5Proxy§r';
+const PROXY_PREFIX = '§6S§eta§fr§bfi§3sh';
 
 const DEFAULT_CONFIG = {
     proxyPort: 25565,
@@ -33,8 +33,6 @@ const DEFAULT_CONFIG = {
  * @returns {string} The base directory path.
  */
 function getBaseDirectory() {
-    // For pkg, the base directory is where the executable is.
-    // For node, it's the parent directory of /src
     return process.pkg ? path.dirname(process.execPath) : path.join(__dirname, '..');
 }
 
@@ -172,8 +170,7 @@ class ProxyManager {
 
         this.server = null;
         this.currentPlayer = null;
-        this.waitingClient = null;
-        this.isRestarting = false;
+        this.isSwitching = false;
         this.authenticatedUsers = new Set();
         this.forceNextAuth = false;
         
@@ -203,7 +200,7 @@ class ProxyManager {
                     if (args.length === 0) {
                         this.showServerList(client);
                     } else {
-                        this.switchServer(client, args[0]);
+                        this.switchServer(args[0]);
                     }
                 }
             },
@@ -230,9 +227,15 @@ class ProxyManager {
             },
 
             reauth: {
-                description: 'Force re-authentication with Microsoft',
-                handler: (client, args) => {
-                    this.clearAuthAndRestart(client);
+                description: 'Force re-authentication with Microsoft on next login.',
+                handler: (client) => {
+                    if (!this.currentPlayer) {
+                        this.sendChatMessage(client, '§cYou are not connected to a server.');
+                        return;
+                    }
+                    this.forceNextAuth = true;
+                    this.clearAuthCache(this.currentPlayer.username);
+                    this.sendChatMessage(client, '§aAuthentication cache cleared. Please disconnect and reconnect to re-authenticate.');
                 }
             },
 
@@ -272,18 +275,51 @@ class ProxyManager {
         this.sendChatMessage(client, serverList + '\n§7Usage: §f/proxy server <name|host:port>');
     }
 
-    switchServer(client, target) {
-        const { host, port } = this.parseServerTarget(target);
-        
-        this.config.targetHost = host;
-        this.config.targetPort = port;
+    switchServer(target) {
+        if (!this.currentPlayer || this.isSwitching) {
+            this.sendChatMessage(this.currentPlayer?.client, '§cCannot switch server right now.');
+            return;
+        }
+
+        const serverInfo = this.parseServerTarget(target);
+        if (!serverInfo) {
+            this.sendChatMessage(this.currentPlayer.client, `§cInvalid server target: ${target}`);
+            return;
+        }
+
+        this.isSwitching = true;
+        this.sendChatMessage(this.currentPlayer.client, `§7Connecting to ${serverInfo.host}:${serverInfo.port}...`);
+
+        this.currentPlayer.targetClient.removeAllListeners();
+        this.currentPlayer.client.removeAllListeners('packet');
+        this.currentPlayer.targetClient.end('Switching servers');
+
+        this.config.targetHost = serverInfo.host;
+        this.config.targetPort = serverInfo.port;
         this.saveConfig(this.config);
         
-        this.sendChatMessage(client, `§aServer changed to §f${host}:${port}.`);
+        const newTargetClient = mc.createClient({
+            host: this.config.targetHost,
+            port: this.config.targetPort,
+            username: this.currentPlayer.username,
+            version: this.config.version,
+            auth: 'microsoft',
+            hideErrors: false,
+            profilesFolder: path.join(BASE_DIR, 'auth_cache', this.currentPlayer.username)
+        });
+
+        this.currentPlayer.targetClient = newTargetClient;
+
+        newTargetClient.once('login', (packet) => {
+            this.isSwitching = false;
+            this.sendChatMessage(this.currentPlayer.client, `§aConnected to ${target}!`);
+            this.setupPacketForwarding(packet, true);
+        });
         
-        if (this.currentPlayer) {
-            this.restartServer(true, this.currentPlayer.client, '§aSwitching servers. Please reconnect.');
-        }
+        newTargetClient.on('error', (err) => {
+            this.isSwitching = false;
+            this.kickPlayer(`§cFailed to connect to ${target}: ${err.message}`);
+        });
     }
 
     parseServerTarget(target) {
@@ -313,16 +349,6 @@ class ProxyManager {
         this.sendChatMessage(client, `§aRemoved server §f${name}`);
     }
 
-    clearAuthAndRestart(client) {
-        const username = client.username;
-        this.authenticatedUsers.delete(username);
-        this.forceNextAuth = true;
-        
-        this.clearAuthCache(username);
-        this.sendChatMessage(client, '§aAuthentication cache cleared. The proxy will restart.');
-        this.restartServer(false, client, '§aPlease reconnect to re-authenticate.');
-    }
-
     clearAuthCache(username) {
         const authCachePath = path.join(BASE_DIR, 'auth_cache', username);
         if (!fs.existsSync(authCachePath)) return;
@@ -332,88 +358,54 @@ class ProxyManager {
 
     
     /**
-     * Starts the proxy server, initially in offline mode for authentication.
+     * Starts the proxy server.
      */
     start() {
-        this.createServer(false);
+        this.createServer();
         const target = this.config.targetPort === 25565 ? this.config.targetHost : `${this.config.targetHost}:${this.config.targetPort}`;
         console.log(`Default target: ${target}`);
     }
 
     
     /**
-     * Creates and configures a minecraft-protocol server instance.
-     * @param {boolean} onlineMode Whether to start the server in online mode.
+     * Creates and configures the minecraft-protocol server instance.
      */
-    createServer(onlineMode) {
-        const motdStatus = onlineMode ? '§aAuthenticated' : '§7Pending Auth';
-        const motd = this.generateMOTD(motdStatus);
+    createServer() {
+        const motd = this.generateMOTD();
 
         const serverConfig = {
-            'online-mode': onlineMode,
+            'online-mode': true,
             version: this.config.version,
             port: this.config.proxyPort,
             keepAlive: false,
             motd,
-            maxPlayers: 1
+            maxPlayers: 1,
+            beforeLogin: (client) => {
+                if (client.protocolVersion !== 47) {
+                    console.log(`[LOGIN][REJECT] ${client.socket.remoteAddress}:${client.socket.remotePort} tried ${client.protocolVersion}`);
+                    client.end('§cPlease connect using 1.8.9');
+                }
+            }
         };
 
         this.server = mc.createServer(serverConfig);
         this.server.on('login', this.handlePlayerLogin.bind(this));
         this.server.on('error', (err) => console.error(`Proxy server error:`, err));
         this.server.on('listening', () => {
-            console.log(`Server is now running in ${onlineMode ? 'online' : 'offline'} mode.`);
-            this.isRestarting = false;
+            console.log(`Server is running in online mode.`);
+            this.isSwitching = false;
         });
     }
 
-    
-    /**
-     * Restarts the proxy server, switching its online mode.
-     * Kicks any connected player with a message to reconnect.
-     * @param {boolean} newOnlineMode The desired online mode for the new server.
-     * @param {mc.Client} [clientToKick] The specific client to kick.
-     * @param {string} [kickMessage] The message to send to the client being kicked.
-     */
-    restartServer(newOnlineMode, clientToKick = null, kickMessage = '§eProxy is restarting. Please reconnect.') {
-        if (this.isRestarting) return;
-        this.isRestarting = true;
-        
-        console.log(`Restarting server.`);
-
-        const client = clientToKick || this.currentPlayer?.client || this.waitingClient;
-
-        if (this.currentPlayer) this.currentPlayer = null;
-        if (this.waitingClient) this.waitingClient = null;
-
-        if (client && client.state !== mc.states.DISCONNECTED) {
-            client.end(kickMessage);
-        }
-    
-        if (this.currentPlayer) this.currentPlayer = null;
-        if (this.waitingClient) this.waitingClient = null;
-        
-        if (!this.server) {
-            this.createServer(newOnlineMode);
-            return;
-        }
-        
-        this.server.close();
-        this.server = null;
-        setTimeout(() => this.createServer(newOnlineMode), 250);
-    }
-
-    
     /**
      * Generates the MOTD string based on loaded plugins and server status.
-     * @param {string} statusText The current status text (e.g., Authenticated).
      * @returns {string} The formatted MOTD.
      */
-    generateMOTD(statusText) {
+    generateMOTD() {
         const pluginCount = this.proxyAPI.getLoadedPlugins().length;
         const pluginText = pluginCount > 0 ? `${pluginCount} Plugin${pluginCount > 1 ? 's' : ''}` : 'No Plugins';
         const targetDisplay = this.config.targetPort === 25565 ? this.config.targetHost : `${this.config.targetHost}:${this.config.targetPort}`;
-        return `§6S§eta§fr§bfi§3sh §5Proxy§r §8| ${pluginText}\n§7Connected to: §e${targetDisplay} §8| ${statusText}`;
+        return `§6S§eta§fr§bfi§3sh §5Proxy§r §8| ${pluginText}\n§7Connected to: §e${targetDisplay}`;
     }
 
 
@@ -422,70 +414,31 @@ class ProxyManager {
      * @param {mc.Client} client The client object for the connecting player.
      */
     handlePlayerLogin(client) {
-        if (this.isRestarting) {
-            client.end('§cProxy is restarting, please reconnect in a moment...');
-            return;
-        }
-
-        if (this.currentPlayer || this.waitingClient) {
-            client.end('§cProxy is already in use.');
-            return;
-        }
-
-        console.log(`Player ${client.username} connected.`);
-
-        const isAuthenticated = this.authenticatedUsers.has(client.username);
-        const isOnlineMode = this.server.options['online-mode'];
-
-        if (isOnlineMode) {
-            if (isAuthenticated) {
-                this.connectToTarget(client);
-            } else {
-                console.log(`New user ${client.username} detected. Clearing old sessions and restarting for authentication.`);
-                this.authenticatedUsers.clear();
-                this.restartServer(false, client, `§ePlease reconnect to authenticate account: ${client.username}`);
-            }
-        } else {
-            this.authManager.sendToAuthWorld(client);
-        }
+        this.authManager.handleLogin(client);
     }
 
-
     /**
-     * Connects an authenticated player to the target server.
-     * @param {mc.Client} client The player's client.
+     * Respawns the client to safely switch them to a new world/server
+     * without visual glitches or getting stuck.
+     * @param {object} loginPacket The login packet from the new target server.
      */
-    connectToTarget(client) {
-        console.log(`Connecting ${client.username} to ${this.config.targetHost}`);
-
-        const authCachePath = path.join(BASE_DIR, 'auth_cache', client.username);
-
-        const targetClient = mc.createClient({
-            host: this.config.targetHost,
-            port: this.config.targetPort,
-            username: client.username,
-            version: this.config.version,
-            auth: 'microsoft',
-            hideErrors: false,
-            profilesFolder: authCachePath
+    respawnPlayer(loginPacket) {
+        if (!this.currentPlayer?.client) return;
+        this.currentPlayer.client.write('respawn', {
+            dimension: loginPacket.dimension,
+            difficulty: loginPacket.difficulty,
+            gamemode: loginPacket.gameMode,
+            levelType: loginPacket.levelType
         });
-
-        this.currentPlayer = {
-            username: client.username,
-            client,
-            targetClient,
-            entityId: null,
-            joinTime: Date.now()
-        };
-        
-        this.setupPacketForwarding();
     }
 
 
     /**
      * Sets up the two-way forwarding of packets between the client and target server.
+     * @param {object} loginPacket The login packet from the target server.
+     * @param {boolean} isRespawnNeeded True if the player should be respawned instead of logged in.
      */
-    setupPacketForwarding() {
+    setupPacketForwarding(loginPacket, isRespawnNeeded) {
         const { client, targetClient, username } = this.currentPlayer;
         
         let forwardingSetup = false;
@@ -531,45 +484,42 @@ class ProxyManager {
             doFinalCleanup();
         });
         
-        targetClient.on('login', (packet) => {
-            console.log(`Joined ${this.config.targetHost} as ${username}.`);
+        console.log(`Joined ${this.config.targetHost} as ${username}.`);
+        this.currentPlayer.entityId = loginPacket.entityId;
+        
+        if (isRespawnNeeded) {
+            this.respawnPlayer(loginPacket);
+        } else {
+            client.write('login', loginPacket);
+        }
+        
+        this.proxyAPI.emit('playerJoin', { username, player: this.currentPlayer });
+        
+        client.on('packet', (data, meta) => {
+            if (meta.name === 'chat' && this.commandHandler.handleCommand(data.message, client)) {
+                return;
+            }
             
-            this.currentPlayer.entityId = packet.entityId;
-            client.write('login', packet);
-            this.proxyAPI.emit('playerJoin', { username, player: this.currentPlayer });
+            const passiveEvent = { username, player: this.currentPlayer, data, meta };
+            this.proxyAPI.emit('clientPacketMonitor', passiveEvent);
             
-            if (!forwardingSetup) {
-                forwardingSetup = true;
-                
-                client.on('packet', (data, meta) => {
-                    if (meta.name === 'chat' && this.commandHandler.handleCommand(data.message, client)) {
-                        return;
-                    }
-                    
+            const interceptEvent = { username, player: this.currentPlayer, data, meta, cancelled: false };
+            this.proxyAPI.emit('clientPacketIntercept', interceptEvent);
+            
+            if (!interceptEvent.cancelled && targetClient.state === mc.states.PLAY) {
+                targetClient.write(meta.name, data);
+            }
+        });
 
-                    const passiveEvent = { username, player: this.currentPlayer, data, meta };
-                    this.proxyAPI.emit('clientPacketMonitor', passiveEvent);
-                    
-                    const interceptEvent = { username, player: this.currentPlayer, data, meta, cancelled: false };
-                    this.proxyAPI.emit('clientPacketIntercept', interceptEvent);
-                    
-                    if (!interceptEvent.cancelled) {
-                        targetClient.write(meta.name, data);
-                    }
-                });
-
-                targetClient.on('packet', (data, meta) => {
-
-                    const passiveEvent = { username, player: this.currentPlayer, data, meta };
-                    this.proxyAPI.emit('serverPacketMonitor', passiveEvent);
-                    
-                    const interceptEvent = { username, player: this.currentPlayer, data, meta, cancelled: false };
-                    this.proxyAPI.emit('serverPacketIntercept', interceptEvent);
-                    
-                    if (!interceptEvent.cancelled) {
-                        client.write(meta.name, data);
-                    }
-                });
+        targetClient.on('packet', (data, meta) => {
+            const passiveEvent = { username, player: this.currentPlayer, data, meta };
+            this.proxyAPI.emit('serverPacketMonitor', passiveEvent);
+            
+            const interceptEvent = { username, player: this.currentPlayer, data, meta, cancelled: false };
+            this.proxyAPI.emit('serverPacketIntercept', interceptEvent);
+            
+            if (!interceptEvent.cancelled && client.state === mc.states.PLAY) {
+                client.write(meta.name, data);
             }
         });
     }
@@ -594,8 +544,8 @@ class ProxyManager {
      * @param {string} reason The reason for kicking.
      */
     kickPlayer(reason) {
-        const target = this.currentPlayer?.client;
-        target.end(reason);
+        if (!this.currentPlayer || !this.currentPlayer.client) return;
+        this.currentPlayer.client.end(reason);
     }
 }
 
