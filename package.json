@@ -1,4 +1,14 @@
 {
+  "name": "minecraft-proxy",
+  "version": "1.0.0",
+  "description": "A Minecraft proxy with authentication and plugin support",
+  "main": "proxy.js",
+  "scripts": {
+    "start": "node start.js",
+    "proxy": "node proxy.js",
+    "config": "node proxy-config.js",
+    "build": "node build.js"
+  },
   "dependencies": {
     "minecraft-protocol": "^1.57.0",
     "prismarine-auth": "^2.7.0"
