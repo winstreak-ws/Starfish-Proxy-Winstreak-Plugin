@@ -11,6 +11,16 @@ A personal Minecraft proxy server with Microsoft authentication, dynamic server 
 
 ## Quick Start
 
+1. Install latest from Releases tab
+
+2. Extract the .zip and run the executable
+
+3. Connect with any Minecraft 1.8.9 Client:
+   - Add server: `localhost:25565` 
+   - Connect to trigger authentication
+   - Complete Microsoft login in the browser that opens automatically
+   - Reconnect after authentication completes
+
 ### Installation
 
 ```bash
@@ -24,7 +34,7 @@ npm install
 node src/proxy.js
 ```
 
-2. Connect with Minecraft:
+2. Connect with any Minecraft 1.8.9 Client:
    - Add server: `localhost:25565` 
    - Connect to trigger authentication
    - Complete Microsoft login in the browser that opens automatically
