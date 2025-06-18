@@ -180,7 +180,6 @@ class AnticheatSystem {
         this.uuidToDisplayName = new Map();
         this.userPosition = null;
         
-        // Dynamic plugin prefix using proxy prefix
         this.PLUGIN_PREFIX = `§8[${this.proxyAPI.proxyPrefix}§8-§cAC§8]§r`;
         
         this.config = {
@@ -192,8 +191,7 @@ class AnticheatSystem {
     }
     
     saveConfig() {
-        // In a real scenario, this would save to a file.
-        // For now, it's just in-memory.
+        // placeholder
         console.log('[Anticheat] Config updated.');
     }
     
@@ -317,7 +315,9 @@ class AnticheatSystem {
         this.players.set(playerName, player);
         this.entityToPlayer.set(data.entityId, player);
         
-        console.debug(`[Anticheat] Player spawned: ${playerName} (${displayName}) - Entity ID: ${data.entityId}`);
+        if (this.config.debug) {
+            console.log(`[Anticheat-Debug] Player spawned: ${playerName} (${displayName}) - Entity ID: ${data.entityId}`);
+        }
     }
     
     handleEntityDestroy(data) {
@@ -770,11 +770,7 @@ class AnticheatSystem {
             const totalDistance = Math.sqrt(dx * dx + dz * dz);
             
             const distanceCheck = totalDistance > 3.4;
-            
-            if (this.config.debug) {
-                console.log(`${player.username} ScaffoldC: speed=${avgSpeedPerSecond.toFixed(2)}b/s, distance=${totalDistance.toFixed(2)}, airRatio=${airRatio.toFixed(2)}, highSpeed=${highSpeedCheck}, distanceOK=${distanceCheck}`);
-            }
-            
+
             if (distanceCheck) {
                 player.violations.ScaffoldC++;
                 
@@ -848,7 +844,9 @@ class AnticheatSystem {
         const currentPlayer = this.proxyAPI.currentPlayer;
         if (!currentPlayer) return;
 
-        console.debug(`[Anticheat] Flagging ${player.displayName} for ${checkName} (VL: ${vl})`);
+        if (this.config.debug) {
+            console.log(`[Anticheat-Debug] Flagging ${player.displayName} for ${checkName} (VL: ${vl})`);
+        }
 
         if (checkConfig.alerts) {
             const message = `${this.PLUGIN_PREFIX} ${player.displayName} §7flagged §c${checkName} §8(§7VL: ${vl}§8)`;
