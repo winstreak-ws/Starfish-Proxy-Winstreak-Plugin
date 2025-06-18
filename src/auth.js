@@ -6,6 +6,40 @@ class AuthManager {
     constructor(proxyManager, baseDir) {
         this.proxyManager = proxyManager;
         this.BASE_DIR = baseDir;
+        this.loginAttempts = new Map();
+    }
+
+    /**
+     * Checks if a user is being rate limited and updates their attempt count
+     * @param {string} username The username to check
+     * @returns {boolean} True if the user should be rate limited
+     */
+    checkRateLimit(username) {
+        const now = Date.now();
+        const attempts = this.loginAttempts.get(username) || { count: 0, lastAttempt: 0 };
+        
+        if (now - attempts.lastAttempt > 20000) {
+            attempts.count = 0;
+        }
+        
+        if (attempts.count >= 2) {
+            const timeSinceLastAttempt = now - attempts.lastAttempt;
+            if (timeSinceLastAttempt < 20000) {
+                return true;
+            }
+        }
+        
+        attempts.count++;
+        attempts.lastAttempt = now;
+        this.loginAttempts.set(username, attempts);
+        
+        for (const [user, data] of this.loginAttempts.entries()) {
+            if (now - data.lastAttempt > 60000) {
+                this.loginAttempts.delete(user);
+            }
+        }
+        
+        return false;
     }
 
     /**
@@ -66,47 +100,54 @@ class AuthManager {
             if (authKeepAliveInterval) {
                 proxy.sendChatMessage(client, `§a✓ Authenticated as ${realUsername}`);
             }
-            proxy.authenticatedUsers.add(realUsername);
         });
         
         targetClient.on('error', (err) => {
              onAuthHandled();
              console.error(`Target connection error: ${err.message}`);
-             client.end(`§cAuthentication/Connection failed: ${err.message}`);
+             
+            if (this.proxyManager.currentPlayer) {
+                const { client } = this.proxyManager.currentPlayer;
+                this.proxyManager.currentPlayer.targetClient = null;
+
+                this.proxyManager.createLimboWorld(client);
+
+                const messages = [
+                    '§6========================================',
+                    '   §6S§eta§fr§bfi§3sh §5P§5roxy §e- Connection Failed',
+                    '§6========================================',
+                    `§cFailed to connect to the target server.`,
+                    `§cReason: ${err.message}`,
+                    `§7You are now in limbo. Use §b/proxy server§7 to try another server.`,
+                    '§6========================================'
+                ];
+                this.proxyManager.sendChatMessage(client, messages.join('\n'));
+
+                client.removeAllListeners('packet');
+                client.on('packet', (data, meta) => {
+                    if (meta.name === 'chat' && data.message.startsWith('/')) {
+                        if (this.proxyManager.commandHandler.handleCommand(data.message, client)) {
+                            return;
+                        }
+                    }
+                });
+            }
         });
 
         targetClient.once('login', (packet) => {
             onAuthHandled();
-            proxy.setupPacketForwarding(packet, false);
+            proxy.setupPacketForwarding(packet);
         });
     }
 
     /**
-     * Places a client in a temporary world to perform Microsoft authentication
-     * while holding their connection open.
+     * Places a client in a temporary world to perform Microsoft authentication while holding their connection open.
      * @param {mc.Client} client The player's client.
      * @param {object} msaData The Microsoft auth data from onMsaCode.
      * @returns {NodeJS.Timeout} The keep-alive interval timer.
      */
     _createAuthWorld(client, msaData) {
-        client.write('login', {
-            entityId: 1,
-            gameMode: 3,
-            dimension: 0,
-            difficulty: 0,
-            maxPlayers: 1,
-            levelType: 'flat',
-            reducedDebugInfo: false
-        });
-
-        client.write('position', {
-            x: 0.5,
-            y: 7,
-            z: 0.5,
-            yaw: 0,
-            pitch: 0,
-            flags: 0
-        });
+        this.proxyManager.createLimboWorld(client);
 
         const keepAliveInterval = setInterval(() => {
             if (client.state === mc.states.PLAY) {

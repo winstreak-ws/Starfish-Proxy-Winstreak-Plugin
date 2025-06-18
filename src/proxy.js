@@ -99,9 +99,8 @@ class ProxyAPI extends EventEmitter {
             return true;
     }
 
-    sendChatMessage(message) {
-        if (!this.currentPlayer?.client) return false;
-        return this.proxyManager.sendChatMessage(this.currentPlayer.client, message);
+    sendChatMessage(client, message) {
+        return this.proxyManager.sendChatMessage(client, message);
     }
 
     registerPlugin(pluginInfo) {
@@ -171,7 +170,6 @@ class ProxyManager {
         this.server = null;
         this.currentPlayer = null;
         this.isSwitching = false;
-        this.authenticatedUsers = new Set();
         this.forceNextAuth = false;
         
         this.registerProxyCommands();
@@ -189,95 +187,130 @@ class ProxyManager {
 
 
     /**
-     * Registers built-in proxy commands
+     * Registers built-in proxy commands using the new fluent command handler.
      */
     registerProxyCommands() {
-        this.commandHandler.register('proxy', {
-            server: {
-                description: 'List and switch servers',
-                usage: '[name|host:port]',
-                handler: (client, args) => {
-                    if (args.length === 0) {
-                        this.showServerList(client);
+        this.commandHandler.register('proxy', (registry) => {
+            const { command, THEME } = registry;
+
+            command('server')
+                .description('List and switch servers.')
+                .argument('target', { optional: true, description: 'Server name or host:port to connect to.' })
+                .handler((ctx) => {
+                    if (!ctx.args.target) {
+                        const chat = ctx.createChat();
+                        const current = `${this.config.targetHost}:${this.config.targetPort}`;
+
+                        chat.text('--- Available Servers ---', THEME.header).newline();
+                        chat.text('Current: ', THEME.secondary).text(current, THEME.success).newline().newline();
+
+                        Object.entries(this.config.servers).forEach(([name, server]) => {
+                            chat.button(`${THEME.accent}[${name}]`, `/proxy server ${name}`, `Click to switch to ${name}`)
+                                .space()
+                                .text(`${server.host}:${server.port}`, THEME.muted)
+                                .newline();
+                        });
+                        chat.send();
                     } else {
-                        this.switchServer(args[0]);
+                        this.switchServer(ctx.args.target);
                     }
-                }
-            },
+                });
 
-            addserver: {
-                description: 'Add a server to the list',
-                usage: '<name> <host:port>',
-                validate: [
-                    /^[a-zA-Z0-9_-]+$/,
-                    /^[a-zA-Z0-9.-]+:\d+$/
-                ],
-                handler: (client, args) => {
-                    this.addServer(client, args[0], args[1]);
-                }
-            },
+            command('addserver')
+                .description('Add a server to the list.')
+                .argument('name', { description: 'A short name for the server.' })
+                .argument('hostport', { description: 'The server address as host:port.' })
+                .handler((ctx) => {
+                    const { name, hostport } = ctx.args;
+                    const [host, port] = hostport.split(':');
+                    if (!host || !port) {
+                        return ctx.sendError('Invalid format. Use <name> <host>:<port>');
+                    }
+                    this.config.servers[name] = { host, port: parseInt(port) };
+                    this.saveConfig(this.config);
+                    ctx.sendSuccess(`Added server '${name}' (${hostport})`);
+                });
 
-            removeserver: {
-                description: 'Remove a server from the list',
-                usage: '<name>',
-                validate: /^[a-zA-Z0-9_-]+$/,
-                handler: (client, args) => {
-                    this.removeServer(client, args[0]);
-                }
-            },
+            command('removeserver')
+                .description('Remove a server from the list.')
+                .argument('name', { description: 'The name of the server to remove.' })
+                .handler((ctx) => {
+                    const { name } = ctx.args;
+                    if (!this.config.servers[name]) {
+                        return ctx.sendError(`Server '${name}' not found.`);
+                    }
+                    delete this.config.servers[name];
+                    this.saveConfig(this.config);
+                    ctx.sendSuccess(`Removed server '${name}'.`);
+                });
 
-            reauth: {
-                description: 'Force re-authentication with Microsoft on next login.',
-                handler: (client) => {
+            command('reauth')
+                .description('Force re-authentication on next login.')
+                .handler((ctx) => {
                     if (!this.currentPlayer) {
-                        this.sendChatMessage(client, '§cYou are not connected to a server.');
-                        return;
+                        return ctx.sendError('You are not connected to a server.');
                     }
                     this.forceNextAuth = true;
-                    this.clearAuthCache(this.currentPlayer.username);
-                    this.sendChatMessage(client, '§aAuthentication cache cleared. Please disconnect and reconnect to re-authenticate.');
-                }
-            },
+                    const username = this.currentPlayer.username;
+                    const authCachePath = path.join(BASE_DIR, 'auth_cache', username);
+                    if (fs.existsSync(authCachePath)) {
+                        fs.rmSync(authCachePath, { recursive: true, force: true });
+                        console.log(`Cleared auth cache for ${username}.`);
+                    }
+                    ctx.sendSuccess('Auth cache cleared. Reconnect to re-authenticate.');
+                });
 
-            plugins: {
-                description: 'List all plugins and their status',
-                handler: (client, args) => {
+            command('plugins')
+                .description('List all loaded plugins and their status.')
+                .handler((ctx) => {
                     const pluginStates = this.proxyAPI.getAllPluginStates();
-                    
                     if (pluginStates.length === 0) {
-                        this.sendChatMessage(client, '§7No plugins loaded.');
-                        return;
+                        return ctx.send(`${THEME.muted}No plugins loaded.`);
                     }
-                    
-                    let message = '§6========= Plugins ========\n';
+                    const chat = ctx.createChat();
+                    chat.text('--- Plugins ---', THEME.header).newline();
                     for (const plugin of pluginStates) {
-                        const status = plugin.enabled ? '§aEnabled' : '§cDisabled';
-                        message += `§e${plugin.displayName}: ${status}\n`;
+                        const status = plugin.enabled ? `${THEME.success}Enabled` : `${THEME.error}Disabled`;
+                        chat.text(`${plugin.displayName}§r: `, THEME.secondary)
+                            .text(status)
+                            .newline();
                     }
-                    message += '§6========================';
-                    
-                    this.sendChatMessage(client, message);
-                }
-            }
+                    chat.send();
+                });
         });
     }
 
 
-    showServerList(client) {
-        const current = `${this.config.targetHost}:${this.config.targetPort}`;
-        let serverList = '§6Available Servers:\n';
-        serverList += `§7Current: §a${current}\n\n`;
-        
-        Object.entries(this.config.servers).forEach(([name, server]) => {
-            serverList += `§e${name} §7- §f${server.host}:${server.port}\n`;
+
+    /**
+     * Sends the necessary packets to put a client into a void "limbo" world.
+     * @param {mc.Client} client The client to send packets to.
+     */
+    createLimboWorld(client) {
+        if (!client || client.state !== mc.states.PLAY) return;
+
+        client.write('login', {
+            entityId: 1,
+            gameMode: 1,
+            dimension: 0,
+            difficulty: 0,
+            maxPlayers: 1,
+            levelType: 'flat',
+            reducedDebugInfo: false
         });
-        
-        this.sendChatMessage(client, serverList + '\n§7Usage: §f/proxy server <name|host:port>');
+
+        client.write('position', {
+            x: 0.5,
+            y: 3000,
+            z: 0.5,
+            yaw: 0,
+            pitch: 0,
+            flags: 0
+        });
     }
 
     switchServer(target) {
-        if (!this.currentPlayer || this.isSwitching) {
-            this.sendChatMessage(this.currentPlayer?.client, '§cCannot switch server right now.');
+        if (!this.currentPlayer) {
             return;
         }
 
@@ -287,39 +320,28 @@ class ProxyManager {
             return;
         }
 
-        this.isSwitching = true;
-        this.sendChatMessage(this.currentPlayer.client, `§7Connecting to ${serverInfo.host}:${serverInfo.port}...`);
-
-        this.currentPlayer.targetClient.removeAllListeners();
-        this.currentPlayer.client.removeAllListeners('packet');
-        this.currentPlayer.targetClient.end('Switching servers');
+        const username = this.currentPlayer.username;
+        
+        if (this.authManager.checkRateLimit(username)) {
+            this.sendChatMessage(this.currentPlayer.client, 
+                `§cYou will be rate limited by Microsoft for 20 seconds. Please wait before switching servers.`);
+            return;
+        }
 
         this.config.targetHost = serverInfo.host;
         this.config.targetPort = serverInfo.port;
         this.saveConfig(this.config);
         
-        const newTargetClient = mc.createClient({
-            host: this.config.targetHost,
-            port: this.config.targetPort,
-            username: this.currentPlayer.username,
-            version: this.config.version,
-            auth: 'microsoft',
-            hideErrors: false,
-            profilesFolder: path.join(BASE_DIR, 'auth_cache', this.currentPlayer.username)
-        });
-
-        this.currentPlayer.targetClient = newTargetClient;
-
-        newTargetClient.once('login', (packet) => {
-            this.isSwitching = false;
-            this.sendChatMessage(this.currentPlayer.client, `§aConnected to ${target}!`);
-            this.setupPacketForwarding(packet, true);
-        });
+        this.updateServerMOTD();
         
-        newTargetClient.on('error', (err) => {
-            this.isSwitching = false;
-            this.kickPlayer(`§cFailed to connect to ${target}: ${err.message}`);
-        });
+        let displayName = target;
+        if (this.config.servers[target]) {
+            displayName = target;
+        } else {
+            displayName = `${serverInfo.host}:${serverInfo.port}`;
+        }
+        
+        this.kickPlayer(`§aSwitched to ${displayName}; please reconnect.`);
     }
 
     parseServerTarget(target) {
@@ -329,31 +351,6 @@ class ProxyManager {
         
         const [host, port] = target.split(':');
         return { host, port: parseInt(port) || 25565 };
-    }
-
-    addServer(client, name, hostPort) {
-        const [host, port] = hostPort.split(':');
-        this.config.servers[name] = { host, port: parseInt(port) || 25565 };
-        this.saveConfig(this.config);
-        this.sendChatMessage(client, `§aAdded server §f${name} (${host}:${port || 25565})`);
-    }
-
-    removeServer(client, name) {
-        if (!this.config.servers[name]) {
-            this.sendChatMessage(client, `§cServer §f${name} §cnot found.`);
-            return;
-        }
-        
-        delete this.config.servers[name];
-        this.saveConfig(this.config);
-        this.sendChatMessage(client, `§aRemoved server §f${name}`);
-    }
-
-    clearAuthCache(username) {
-        const authCachePath = path.join(BASE_DIR, 'auth_cache', username);
-        if (!fs.existsSync(authCachePath)) return;
-        fs.rmSync(authCachePath, { recursive: true, force: true });
-        console.log(`Cleared auth cache for ${username}.`);
     }
 
     
@@ -383,7 +380,7 @@ class ProxyManager {
             beforeLogin: (client) => {
                 if (client.protocolVersion !== 47) {
                     console.log(`[LOGIN][REJECT] ${client.socket.remoteAddress}:${client.socket.remotePort} tried ${client.protocolVersion}`);
-                    client.end('§cPlease connect using 1.8.9');
+                    client.end(`§cPlease connect using ${PROXY_VERSION}`);
                 }
             }
         };
@@ -398,6 +395,15 @@ class ProxyManager {
     }
 
     /**
+     * Updates the server's MOTD to reflect current configuration
+     */
+    updateServerMOTD() {
+        if (this.server) {
+            this.server.motd = this.generateMOTD();
+        }
+    }
+
+    /**
      * Generates the MOTD string based on loaded plugins and server status.
      * @returns {string} The formatted MOTD.
      */
@@ -405,7 +411,7 @@ class ProxyManager {
         const pluginCount = this.proxyAPI.getLoadedPlugins().length;
         const pluginText = pluginCount > 0 ? `${pluginCount} Plugin${pluginCount > 1 ? 's' : ''}` : 'No Plugins';
         const targetDisplay = this.config.targetPort === 25565 ? this.config.targetHost : `${this.config.targetHost}:${this.config.targetPort}`;
-        return `§6S§eta§fr§bfi§3sh §5Proxy§r §8| ${pluginText}\n§7Connected to: §e${targetDisplay}`;
+        return `${PROXY_NAME} §8| ${pluginText}\n§7Connected to: §e${targetDisplay}`;
     }
 
 
@@ -417,31 +423,16 @@ class ProxyManager {
         this.authManager.handleLogin(client);
     }
 
-    /**
-     * Respawns the client to safely switch them to a new world/server
-     * without visual glitches or getting stuck.
-     * @param {object} loginPacket The login packet from the new target server.
-     */
-    respawnPlayer(loginPacket) {
-        if (!this.currentPlayer?.client) return;
-        this.currentPlayer.client.write('respawn', {
-            dimension: loginPacket.dimension,
-            difficulty: loginPacket.difficulty,
-            gamemode: loginPacket.gameMode,
-            levelType: loginPacket.levelType
-        });
-    }
+
 
 
     /**
      * Sets up the two-way forwarding of packets between the client and target server.
      * @param {object} loginPacket The login packet from the target server.
-     * @param {boolean} isRespawnNeeded True if the player should be respawned instead of logged in.
      */
-    setupPacketForwarding(loginPacket, isRespawnNeeded) {
+    setupPacketForwarding(loginPacket) {
         const { client, targetClient, username } = this.currentPlayer;
         
-        let forwardingSetup = false;
         let cleanupDone = false;
     
         const doFinalCleanup = () => {
@@ -470,6 +461,9 @@ class ProxyManager {
             doFinalCleanup();
         });
 
+        targetClient.removeAllListeners('end');
+        targetClient.removeAllListeners('error');
+
         targetClient.on('end', (reason) => {
             if (client && client.state !== mc.states.DISCONNECTED) {
                 client.end('Server disconnected');
@@ -487,14 +481,10 @@ class ProxyManager {
         console.log(`Joined ${this.config.targetHost} as ${username}.`);
         this.currentPlayer.entityId = loginPacket.entityId;
         
-        if (isRespawnNeeded) {
-            this.respawnPlayer(loginPacket);
-        } else {
-            client.write('login', loginPacket);
-        }
-        
+        client.write('login', loginPacket);
         this.proxyAPI.emit('playerJoin', { username, player: this.currentPlayer });
         
+        client.removeAllListeners('packet');
         client.on('packet', (data, meta) => {
             if (meta.name === 'chat' && this.commandHandler.handleCommand(data.message, client)) {
                 return;
@@ -511,6 +501,7 @@ class ProxyManager {
             }
         });
 
+        targetClient.removeAllListeners('packet');
         targetClient.on('packet', (data, meta) => {
             const passiveEvent = { username, player: this.currentPlayer, data, meta };
             this.proxyAPI.emit('serverPacketMonitor', passiveEvent);
@@ -525,19 +516,20 @@ class ProxyManager {
     }
 
     /**
-     * Sends a formatted chat message to a client.
-     * @param {mc.Client} client The recipient client.
+     * Sends a chat message to a client.
+     * @param {object} client The client to send the message to.
      * @param {string} message The message to send.
      */
     sendChatMessage(client, message) {
         if (!client || client.state !== mc.states.PLAY) return;
+        const isJson = typeof message === 'string' && message.trim().startsWith('{');
+        const jsonPayload = isJson ? message : JSON.stringify({ text: message });
         client.write('chat', {
-        message: JSON.stringify({ text: message }),
-        position: 0,
+            message: jsonPayload,
+            position: 0,
             sender: '0'
-    });
+        });
     }
-
 
     /**
      * Kicks the current player or a specified client.
