@@ -131,6 +131,13 @@ class AuthManager {
                         }
                     }
                 });
+
+                client.once('end', () => {
+                    if (this.proxyManager.currentPlayer && this.proxyManager.currentPlayer.client === client) {
+                        this.proxyManager.currentPlayer = null;
+                        console.log(`Player ${client.username} disconnected from limbo.`);
+                    }
+                });
             }
         });
 
