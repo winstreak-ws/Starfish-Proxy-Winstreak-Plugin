@@ -2,8 +2,8 @@
 // Detects nicked players by analyzing skin data (Credits to github.com/PugrillaDev)
 
 const PLUGIN_INFO = {
-    name: 'Denicker',
-    displayName: '§bDenicker',
+    name: 'denicker',
+    displayName: 'Denicker',
     version: '1.0.0',
     description: 'Detects nicked players by analyzing skin data (Credits to github.com/PugrillaDev)'
 };
@@ -14,14 +14,13 @@ class DenickerSystem {
         this.parsedPlayers = new Set();
         this.noColorTicks = new Map();
         
-        // Dynamic plugin prefix using proxy prefix
         this.PLUGIN_PREFIX = `§8[${this.proxyAPI.proxyPrefix}§8-§cDN§8]§r`;
         
         this.config = {
-            enabled: true,
-            showFailedDenicks: true,
+            showUnresolvedNicks: true,
+            audioAlerts: true,
+            alertDelay: 1000,
             debug: false,
-            alertDelay: 1000
         };
         
         this.registerHandlers();
@@ -60,17 +59,14 @@ class DenickerSystem {
     extractTeamColor(displayName) {
         if (!displayName || typeof displayName !== 'string') return '';
         
-        // Look for color codes at the beginning of the display name
         const colorMatch = displayName.match(/^(§[0-9a-frk-o])/);
         if (colorMatch) {
             return colorMatch[1];
         }
         
-        // If display name is JSON, try to extract color from it
         try {
             const parsed = JSON.parse(displayName);
             if (parsed.color) {
-                // Convert named colors to color codes
                 const colorMap = {
                     'red': '§c', 'blue': '§9', 'green': '§a', 'yellow': '§e',
                     'aqua': '§b', 'light_purple': '§d', 'gold': '§6', 'gray': '§7',
@@ -80,7 +76,6 @@ class DenickerSystem {
                 return colorMap[parsed.color] || '';
             }
             
-            // Look for color in extra components
             if (parsed.extra && Array.isArray(parsed.extra)) {
                 for (const extra of parsed.extra) {
                     if (extra.color && typeof extra.color === 'string') {
@@ -95,15 +90,14 @@ class DenickerSystem {
                 }
             }
         } catch (e) {
-            // Not JSON, continue with string parsing
         }
         
         return '';
     }
     
     registerHandlers() {
-        this.proxyAPI.on('serverPacket', ({ username, data, meta }) => {
-            if (!this.config.enabled) return;
+        this.proxyAPI.on('serverPacketMonitor', ({ username, player, data, meta }) => {
+            if (!this.proxyAPI.isPluginEnabled('denicker')) return;
             
             switch (meta.name) {
                 case 'player_info':
@@ -135,7 +129,6 @@ class DenickerSystem {
             
             if (this.parsedPlayers.has(player.name)) return;
             
-            // Extract display name like anticheat does
             let displayName = player.name;
             if (player.displayName) {
                 try {
@@ -187,7 +180,7 @@ class DenickerSystem {
             
             const cleanDisplayName = this.cleanName(displayName);
             
-            if (KNOWN_NICK_SKINS.has(hash) && this.config.showFailedDenicks) {
+            if (KNOWN_NICK_SKINS.has(hash) && this.config.showUnresolvedNicks) {
                 this.sendAlert(`${cleanDisplayName} §7is nicked.`);
                 return;
             }
@@ -195,7 +188,6 @@ class DenickerSystem {
             const profileName = skinData.profileName || '';
             if (!profileName) return;
             
-            // Extract team color and apply it to the real name
             const teamColor = this.extractTeamColor(player.displayName || player.name);
             const coloredProfileName = teamColor ? `${teamColor}${profileName}` : `§f${profileName}`;
             
@@ -229,12 +221,9 @@ class DenickerSystem {
         setTimeout(() => {
             const fullMessage = `${this.PLUGIN_PREFIX} §r${message}`;
             
-            if (this.proxyAPI.currentPlayer) {
-                this.proxyAPI.sendToClient('chat', {
-                    message: JSON.stringify({ text: fullMessage }),
-                    position: 0,
-                    sender: '00000000-0000-0000-0000-000000000000'
-                });
+            const currentPlayer = this.proxyAPI.currentPlayer;
+            if (currentPlayer) {
+                this.proxyAPI.sendChatMessage(currentPlayer.client, fullMessage);
             }
             
             console.log(`[DENICKER] ${message.replace(/§[0-9a-frk-o]/g, '')}`);
@@ -246,57 +235,81 @@ module.exports = (proxyAPI) => {
     const denicker = new DenickerSystem(proxyAPI);
     
     proxyAPI.registerPlugin(PLUGIN_INFO);
+
+    const buildConfigSchema = () => {
+        const defaultValues = {
+            enabled: true,
+            debug: false,
+            showUnresolvedNicks: true,
+            audioAlerts: true,
+            alertDelay: 1000
+        };
+
+        return [
+            {
+                label: 'Plugin',
+                resetAll: true,
+                defaults: { enabled: defaultValues.enabled, debug: defaultValues.debug },
+                settings: [
+                    { 
+                        type: 'toggle', 
+                        key: 'enabled',
+                        text: ['DISABLED', 'ENABLED'],
+                        description: 'Globally enables or disables the Denicker plugin.'
+                    },
+                    {
+                        type: 'toggle',
+                        key: 'debug',
+                        displayLabel: 'Debug',
+                        description: 'Toggles verbose logging for the Denicker system.'
+                    }
+                ]
+            },
+            {
+                label: 'Show Unresolved Nicks',
+                defaults: { showUnresolvedNicks: defaultValues.showUnresolvedNicks },
+                settings: [{
+                    type: 'toggle',
+                    key: 'showUnresolvedNicks',
+                    text: ['OFF', 'ON'],
+                    description: 'If enabled, shows an alert for players who are likely nicked but could not be resolved to a real name.'
+                }]
+            },
+            {
+                label: 'Audio Alerts',
+                defaults: { audioAlerts: defaultValues.audioAlerts },
+                settings: [{
+                    type: 'soundToggle',
+                    key: 'audioAlerts',
+                    description: 'Plays a sound when an alert is triggered.'
+                }]
+            },
+            {
+                label: 'Alert Delay',
+                defaults: { alertDelay: defaultValues.alertDelay },
+                settings: [
+                     {
+                        type: 'cycle',
+                        key: 'alertDelay',
+                        description: 'The delay in milliseconds before sending a denick alert.',
+                        values: [
+                            { text: ['(', '0ms', ')'], value: 0 },
+                            { text: ['(', '500ms', ')'], value: 500 },
+                            { text: ['(', '1000ms', ')'], value: 1000 },
+                            { text: ['(', '2000ms', ')'], value: 2000 }
+                        ]
+                    }
+                ]
+            }
+        ];
+    };
     
-    proxyAPI.registerCommands('denicker', {
-        debug: {
-            description: 'Toggle debug mode',
-            handler: (client) => {
-                denicker.config.debug = !denicker.config.debug;
-                const debugToggleStatus = denicker.config.debug ? '§aenabled' : '§cdisabled';
-                proxyAPI.sendChatMessage(`${denicker.PLUGIN_PREFIX} §eDebug mode ${debugToggleStatus}§e.`);
-            }
-        },
-        config: {
-            description: 'Show current denicker configuration',
-            handler: (client) => {
-                const pluginStatus = proxyAPI.isPluginEnabled('denicker') ? '§aEnabled' : '§cDisabled';
-                const debugStatus = denicker.config.debug ? '§aOn' : '§cOff';
-                const allNicksStatus = denicker.config.showAllNicks ? '§aOn' : '§cOff';
-                
-                let configList = `§c========= Denicker Config =========\n`;
-                configList += `§ePlugin: ${pluginStatus}\n`;
-                configList += `§eDebug Mode: ${debugStatus}\n`;
-                configList += `§c=====================================\n`;
-                configList += `§eAlert For All Nicks: ${allNicksStatus}\n`;
-                configList += `§eAlert Delay: §b${denicker.config.alertDelay}ms\n`;
-                configList += `§c=====================================`;
-                
-                proxyAPI.sendChatMessage(configList);
-            }
-        },
-        
-        allnicks: {
-            description: 'Toggle alerts for unknown nicks in chat, in addition to denicked players',
-            handler: (client) => {
-                denicker.config.showAllNicks = !denicker.config.showAllNicks;
-                const allNicksToggleStatus = denicker.config.showAllNicks ? '§aOn' : '§cOff';
-                proxyAPI.sendChatMessage(`${denicker.PLUGIN_PREFIX} §eShow all nicks: ${allNicksToggleStatus}§e.`);
-            }
-        },
-        
-        delay: {
-            description: 'Set alert delay in milliseconds',
-            usage: '<milliseconds>',
-            handler: (client, args) => {
-                const delay = parseInt(args[0]);
-                if (!isNaN(delay) && delay >= 0) {
-                    denicker.config.alertDelay = delay;
-                    proxyAPI.sendChatMessage(`${denicker.PLUGIN_PREFIX} §eAlert delay set to ${delay}ms.`);
-                } else {
-                    proxyAPI.sendChatMessage('§cUsage: /denicker delay <milliseconds>');
-                }
-            }
-        }
+    proxyAPI.registerCommands('denicker', (registry) => {
+        registry.registerConfig({
+            displayName: PLUGIN_INFO.displayName,
+            configObject: denicker.config,
+            schemaBuilder: buildConfigSchema
+        });
     });
     
     return PLUGIN_INFO;
