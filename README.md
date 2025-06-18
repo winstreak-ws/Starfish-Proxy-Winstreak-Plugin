@@ -5,7 +5,9 @@ A personal Minecraft proxy server with Microsoft authentication, dynamic server 
 ## TODO
 
 #### Minor
-- Redo config menu (clickable chat messages, nicer looking formatting)
+- Finish config menu (common color theme, fix ugly tooltips)
+- Config version system for plugins(?)
+- Make a real dev clean up code
 
 #### Major
 - Urchin integration plugin (auto-blacklisting, blacklisted player alerts)
