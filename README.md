@@ -8,7 +8,7 @@ A personal Minecraft proxy server with Microsoft authentication, dynamic server 
 - Version system for plugins(?)
 - Dependency system for plugins(?)
 - Improve anticheat checks
-- Move utilities for player packets into base proxy
+- Move utilities for packet manipulation (tab/scoreboard, display names, etc) into base proxy
 
 #### Major
 - Urchin integration plugin (auto-blacklisting, blacklisted player alerts)
