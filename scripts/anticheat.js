@@ -741,8 +741,6 @@ class AnticheatSystem {
     }
     
     shouldAlert(player, checkName, config) {
-        if (!player.violations[checkName] || !player.lastAlerts[checkName]) return false;
-        
         const hasViolations = player.violations[checkName] >= config.vl;
         const timeSinceLastAlert = Date.now() - player.lastAlerts[checkName];
         const cooldownPassed = timeSinceLastAlert > config.cooldown;

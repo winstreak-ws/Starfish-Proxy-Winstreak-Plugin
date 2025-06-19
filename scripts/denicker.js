@@ -195,10 +195,10 @@ class DenickerSystem {
             const hash = url.split('/').pop();
 
             if (KNOWN_NICK_SKINS.has(hash)) {
+                this.proxyAPI.debugLog(`Detected unresolved nick: ${player.name}`);
+                this.storeNickInfo(player, null);
                 if (this.config.showUnresolvedNicks) {
-                    this.proxyAPI.debugLog(`Detected unresolved nick: ${player.name}`);
                     this.sendAlert(player.name, null);
-                    this.storeNickInfo(player, null);
                 }
                 return;
             }

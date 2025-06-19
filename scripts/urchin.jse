@@ -1,0 +1,372 @@
+const https = require('https');
+
+const PLUGIN_INFO = {
+    name: 'urchin',
+    displayName: 'Urchin',
+    version: '1.0.0',
+    description: 'Checks players against the Urchin database for tags.'
+};
+
+const IGNORED_USERS = [ 
+    'Raccoonism',
+];
+
+const VALID_TAG_TYPES = ['info', 'caution', 'closet_cheater', 'confirmed_cheater', 
+                         'blatant_cheater', 'possible_sniper', 'sniper', 'legit_sniper', 'account'];
+
+class UrchinSystem {
+    constructor(proxyAPI) {
+        this.proxyAPI = proxyAPI;
+        this.commandHandler = proxyAPI.proxyManager.commandHandler;
+        this.PLUGIN_PREFIX = `§8[§5Ur§dch§fin§8]§r`;
+        this.URCHIN_API_KEY = process.env.URCHIN_API_KEY;
+
+        if (!this.URCHIN_API_KEY) {
+            console.error('[Urchin] URCHIN_API_KEY not found in .env file. The plugin will be disabled.');
+        }
+        
+        this.registerHandlers();
+    }
+
+    registerHandlers() {
+        this.proxyAPI.on('serverPacketMonitor', ({ meta, data }) => {
+            if (!this.proxyAPI.isPluginEnabled('urchin') || !this.URCHIN_API_KEY) return;
+            
+            if (meta.name === 'chat') {
+                try {
+                    if (data.position === 2) return;
+
+                    const text = this.extractTextFromJson(data.message);
+                    const cleanText = this.stripColorCodes(text);
+                    
+                    if (cleanText.trim()) {
+                        let usernames = [];
+                        if (cleanText.startsWith('ONLINE:')) {
+                            usernames = cleanText
+                                .replace('ONLINE:', '')
+                                .split(',')
+                                .map(name => name.trim())
+                                .filter(name => name.length > 0);
+                        } else if (cleanText.includes('Opponent:')) {
+                            const username = this.extractUsername(cleanText.split('Opponent:')[1].trim());
+                            if (username) usernames.push(username);
+                        } else if (cleanText.startsWith('Team #')) {
+                            const username = this.extractUsername(cleanText.split(':')[1].trim());
+                            if (username) usernames.push(username);
+                        }
+                        
+                        if (usernames.length > 0) {
+                            this.processUsernames(this.proxyAPI.currentPlayer.client, usernames, false);
+                        }
+                    }
+                } catch (err) {
+                    // Ignore chat parsing errors
+                }
+            }
+        });
+    }
+
+    isIgnored(username) {
+        return IGNORED_USERS.includes(username);
+    }
+
+    getTimeAgo(dateString) {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffInSeconds = Math.floor((now - date) / 1000);
+        
+        if (diffInSeconds < 60) return 'just now';
+        
+        const diffInMinutes = Math.floor(diffInSeconds / 60);
+        if (diffInMinutes < 60) return `${diffInMinutes} minute${diffInMinutes === 1 ? '' : 's'} ago`;
+        
+        const diffInHours = Math.floor(diffInMinutes / 60);
+        if (diffInHours < 24) return `${diffInHours} hour${diffInHours === 1 ? '' : 's'} ago`;
+        
+        const diffInDays = Math.floor(diffInHours / 24);
+        if (diffInDays < 30) return `${diffInDays} day${diffInDays === 1 ? '' : 's'} ago`;
+        
+        const diffInMonths = Math.floor(diffInDays / 30);
+        if (diffInMonths < 12) return `${diffInMonths} month${diffInMonths === 1 ? '' : 's'} ago`;
+        
+        const diffInYears = Math.floor(diffInMonths / 12);
+        return `${diffInYears} year${diffInYears === 1 ? '' : 's'} ago`;
+    }
+
+    formatTagType(type) {
+        return type.split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+    }
+    
+    getTagColor(type) {
+        const { THEME } = this.commandHandler;
+        switch (type) {
+            case 'info': return '§7';
+            case 'closet_cheater':
+            case 'blatant_cheater':
+            case 'account':
+            case 'caution': return THEME.primary;
+            case 'confirmed_cheater': return THEME.special;
+            case 'sniper':
+            case 'legit_sniper':
+            case 'possible_sniper': return THEME.error;
+            default: return '§f';
+        }
+    }
+
+    sendClientMessage(client, message) {
+        this.proxyAPI.sendChatMessage(client, `${this.PLUGIN_PREFIX} ${message}`);
+    }
+
+    sendClientError(client, message) {
+        this.sendClientMessage(client, `§c${message}`);
+    }
+    
+    sendClientSuccess(client, message) {
+        this.sendClientMessage(client, `§a${message}`);
+    }
+
+    async processUsernames(client, usernames, skipIgnore = false) {
+        const filteredUsernames = skipIgnore ? usernames : usernames.filter(username => !this.isIgnored(username));
+        if (filteredUsernames.length === 0) return;
+
+        try {
+            const response = await this.batchCheckUrchinTags(filteredUsernames);
+            let hasAnyTags = false;
+
+            for (const username in response.players) {
+                const tags = response.players[username];
+                if (tags && tags.length > 0) {
+                    hasAnyTags = true;
+                    for (const tag of tags) {
+                        this.sendTagMessage(client, username, tag);
+                    }
+                }
+            }
+            this.sendClientSuccess(client, 'All checks completed.');
+
+        } catch (err) {
+            if (err.message === "Invalid API Key") {
+                this.URCHIN_API_KEY = null; // Disable future checks
+                this.sendClientError(client, "Invalid API Key - Urchin tag checking disabled");
+            } else {
+                this.sendClientError(client, `Error checking tags: ${err.message}`);
+            }
+        }
+    }
+
+    sendTagMessage(client, username, tag) {
+        const { THEME } = this.commandHandler;
+        const timeAgo = this.getTimeAgo(tag.added_on);
+        const tagTypeFormatted = this.formatTagType(tag.type);
+        const tagColor = this.getTagColor(tag.type);
+
+        const chat = new this.commandHandler.constructor.ChatBuilder(this.commandHandler, client);
+        chat.text(this.PLUGIN_PREFIX.replace('§r', ''))
+            .text(`${username} `, THEME.text, 'bold')
+            .text(`is `, THEME.text)
+            .text(`tagged`, THEME.error, 'underlined')
+            .text(` for `, THEME.text)
+            .text(tagTypeFormatted, tagColor, 'bold')
+            .text(`: ${tag.reason}`, THEME.text)
+            .hover(`${THEME.muted}Added: ${THEME.text}${timeAgo}`)
+            .send();
+    }
+    
+    async addTag(uuid, tagType, reason, hideUsername, overwrite) {
+        const undashedUuid = uuid.replace(/-/g, '');
+        const requestBody = {
+            uuid: undashedUuid,
+            tag_type: tagType.toLowerCase(),
+            reason: reason,
+            hide_username: hideUsername,
+            overwrite: overwrite
+        };
+        const path = `/admin/add-tag?key=${this.URCHIN_API_KEY}`;
+        const jsonBody = JSON.stringify(requestBody);
+
+        return this._makeHttpsRequest('urchin.ws', path, 'POST', jsonBody, {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(jsonBody)
+        });
+    }
+
+    async usernameToUUID(username) {
+        try {
+            const data = await this._makeHttpsRequest('api.mojang.com', `/users/profiles/minecraft/${encodeURIComponent(username)}`, 'GET');
+            const response = JSON.parse(data);
+            if (response && response.id) {
+                return response.id.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+            }
+            throw new Error('Invalid response from Mojang API');
+        } catch (e) {
+            if (e.statusCode === 204 || e.statusCode === 404) {
+                 throw new Error(`Player not found: ${username}`);
+            }
+            throw e;
+        }
+    }
+
+    async batchCheckUrchinTags(usernames) {
+        const requestBody = { usernames };
+        const jsonBody = JSON.stringify(requestBody);
+        const response = await this._makeHttpsRequest(
+            'urchin.ws',
+            `/player?key=${this.URCHIN_API_KEY}&sources=GAME,PARTY`,
+            'POST',
+            jsonBody,
+            { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(jsonBody) }
+        );
+        const parsed = JSON.parse(response);
+        if (parsed === "Invalid Key") {
+            throw new Error("Invalid API Key");
+        }
+        return parsed;
+    }
+
+    _makeHttpsRequest(hostname, path, method, body = null, headers = {}) {
+        return new Promise((resolve, reject) => {
+            const options = { hostname, path, method, headers };
+            const req = https.request(options, (res) => {
+                let data = '';
+                res.on('data', (chunk) => data += chunk);
+                res.on('end', () => {
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                        resolve(data);
+                    } else {
+                        const err = new Error(`Request Failed. Status Code: ${res.statusCode}`);
+                        err.statusCode = res.statusCode;
+                        err.data = data;
+                        reject(err);
+                    }
+                });
+            });
+            req.on('error', (e) => reject(e));
+            if (body) req.write(body);
+            req.end();
+        });
+    }
+    
+    stripColorCodes(text) {
+        return text.replace(/§[0-9a-fk-or]/g, '');
+    }
+
+    extractTextFromJson(message) {
+        try {
+            const parsed = typeof message === 'string' ? JSON.parse(message) : message;
+            let fullText = parsed.text || '';
+            if (parsed.extra) {
+                fullText += parsed.extra.map(part => part.text || '').join('');
+            }
+            return fullText;
+        } catch (e) {
+            return typeof message === 'string' ? message : '';
+        }
+    }
+
+    extractUsername(text) {
+        return this.stripColorCodes(text)
+            .replace(/^\[.*?\]\s*/, '')
+            .trim();
+    }
+}
+
+
+module.exports = (proxyAPI) => {
+    const urchin = new UrchinSystem(proxyAPI);
+    proxyAPI.registerPlugin(PLUGIN_INFO);
+
+    proxyAPI.registerCommands('urchin', (registry) => {
+        const { command, THEME } = registry;
+        
+        const checkPluginState = (ctx) => {
+             if (!proxyAPI.isPluginEnabled('urchin')) {
+                ctx.sendError('Urchin plugin is disabled.');
+                return false;
+            }
+            if (!urchin.URCHIN_API_KEY) {
+                ctx.sendError('Urchin API key is not configured. The plugin is disabled.');
+                return false;
+            }
+            return true;
+        }
+
+        command('view')
+            .description('Check Urchin tags for one or more players.')
+            .argument('players', { type: 'greedy', description: 'Player names separated by spaces.' })
+            .handler((ctx) => {
+                if (!checkPluginState(ctx)) return;
+                const usernames = ctx.args.players.split(' ').filter(Boolean);
+                urchin.processUsernames(ctx.client, usernames, true);
+            });
+            
+        command('fakewho')
+            .description('Simulate a /who command to check multiple players.')
+            .argument('players', { type: 'greedy', description: 'Player names separated by spaces.' })
+            .handler((ctx) => {
+                if (!checkPluginState(ctx)) return;
+                const usernames = ctx.args.players.split(' ').filter(Boolean);
+                urchin.processUsernames(ctx.client, usernames, false);
+            });
+            
+        const handleTagCommand = async (ctx, isForce) => {
+            if (!checkPluginState(ctx)) return;
+
+            const { player, tagtype, reason } = ctx.args;
+            const { hide } = ctx.options;
+
+            if (!VALID_TAG_TYPES.includes(tagtype.toLowerCase())) {
+                return ctx.sendError(`Invalid tag type. Valid: ${VALID_TAG_TYPES.join(', ')}`);
+            }
+            
+            urchin.sendClientMessage(ctx.client, `§eProcessing tag for ${player}...`);
+
+            try {
+                const uuid = await urchin.usernameToUUID(player);
+                const responseData = await urchin.addTag(uuid, tagtype, reason.join(' '), hide === 'true', isForce);
+                urchin.sendClientSuccess(ctx.client, `Successfully added ${urchin.formatTagType(tagtype)} tag to ${player}`);
+            } catch (error) {
+                 if (error.statusCode === 409 || error.statusCode === 422) { // Conflict / Unprocessable
+                    try {
+                        const errorData = JSON.parse(error.data);
+                        if (errorData.detail && errorData.detail.current_tags) {
+                             const existingTag = errorData.detail.current_tags[0];
+                             const chat = ctx.createChat();
+                             chat.text(urchin.PLUGIN_PREFIX.replace('§r', ''))
+                                 .text(`${player} already has a `, THEME.primary)
+                                 .text(urchin.formatTagType(existingTag.tag_type), urchin.getTagColor(existingTag.tag_type), 'bold')
+                                 .text(` tag.\nReason: ${existingTag.reason}\n`, THEME.primary)
+                                 .text(`Use `, THEME.primary)
+                                 .suggestButton(`/urchin forcetag ${ctx.args.player} ${ctx.args.tagtype} ${ctx.args.reason.join(' ')}`, `/urchin forcetag ${ctx.args.player} ${ctx.args.tagtype} ${ctx.args.reason.join(' ')}`, 'Click to run /forcetag', THEME.error)
+                                 .text(` to overwrite.`, THEME.primary)
+                                 .send();
+                             return;
+                        }
+                    } catch (e) { /* Fallback */ }
+                    urchin.sendClientError(ctx.client, 'Tag already exists. Use /urchin forcetag to overwrite.');
+                } else {
+                    urchin.sendClientError(ctx.client, `Error: ${error.message}`);
+                }
+            }
+        };
+
+        command('tag')
+            .description('Add an Urchin tag to a player.')
+            .argument('player', { description: 'The player to tag.' })
+            .argument('tagtype', { description: 'The type of tag.' })
+            .argument('reason', { type: 'greedy', description: 'The reason for the tag.' })
+            .option('--hide <boolean>', 'Whether to hide the username on the tag (true/false).', 'false')
+            .handler((ctx) => handleTagCommand(ctx, false));
+            
+        command('forcetag')
+            .description('Overwrite an existing Urchin tag on a player.')
+            .argument('player', { description: 'The player to tag.' })
+            .argument('tagtype', { description: 'The type of tag.' })
+            .argument('reason', { type: 'greedy', description: 'The reason for the tag.' })
+            .option('--hide <boolean>', 'Whether to hide the username on the tag (true/false).', 'false')
+            .handler((ctx) => handleTagCommand(ctx, true));
+    });
+
+    return PLUGIN_INFO;
+}; 
