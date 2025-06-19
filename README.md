@@ -5,13 +5,15 @@ A personal Minecraft proxy server with Microsoft authentication, dynamic server 
 ## TODO
 
 #### Minor
-- Finish config menu (common color theme, fix ugly tooltips)
-- Config version system for plugins(?)
-- Make a real dev clean up code
+- Finish config & help menu (fix ugly tooltips)
+- Version system for plugins(?)
+- Dependency system for plugins(?)
+- Improve anticheat checks
 
 #### Major
 - Urchin integration plugin (auto-blacklisting, blacklisted player alerts)
 - Hypixel utils plugin (auto /who, client tags in tab, session tracking)
+- Support for official obfuscated plugins(?)
 
 ## Features
 
