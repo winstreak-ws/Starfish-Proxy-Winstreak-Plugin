@@ -114,6 +114,14 @@ class ProxyAPI extends EventEmitter {
     isPluginEnabled(pluginName) {
         return this.proxyManager.pluginManager.isPluginEnabled(pluginName);
     }
+
+    setPluginDebug(pluginName, debug) {
+        return this.proxyManager.pluginManager.setPluginDebug(pluginName, debug);
+    }
+    
+    isPluginDebugEnabled(pluginName) {
+        return this.proxyManager.pluginManager.isPluginDebugEnabled(pluginName);
+    }
     
     getAllPluginStates() {
         return this.proxyManager.pluginManager.getAllPluginStates();

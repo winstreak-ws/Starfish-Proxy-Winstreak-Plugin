@@ -252,8 +252,8 @@ class CommandHandler {
         if (moduleName === 'proxy') {
             displayName = 'Proxy';
         } else {
-            const pluginInfo = this.proxyManager.pluginManager.plugins.get(moduleName);
-            displayName = pluginInfo?.displayName || moduleName;
+            const pluginData = this.proxyManager.pluginManager.plugins.get(moduleName);
+            displayName = pluginData?.info.displayName || moduleName;
         }
 
         if (commandName) {
@@ -430,7 +430,10 @@ class CommandHandler {
             .addOption(new Option('--reset-all-execute', 'Execute resetting all settings').hideHelp())
             .action((options, cmd) => {
                 const { set, page, resetSetting, resetAllConfirm, resetAllExecute } = cmd.opts();
-                const schema = schemaBuilder();
+                
+                const baseSchema = schemaBuilder();
+                const standardSettings = this.proxyManager.pluginManager.getStandardPluginSettings(moduleName);
+                const schema = [standardSettings, ...baseSchema];
                 
                 const ctx = {
                     client: this._currentClient,
@@ -452,6 +455,8 @@ class CommandHandler {
                 if (resetAllExecute) {
                     schema.forEach(item => {
                         if (!item.defaults) return;
+                        if (item.label === 'Plugin Controls') return;
+                        
                         for (const key in item.defaults) {
                             const setting = item.settings.find(s => s.key.endsWith(key));
                             if(!setting) continue;
@@ -459,11 +464,9 @@ class CommandHandler {
                             const fullPath = setting.key;
                             const defaultValue = getProperty(item.defaults, key);
 
-                            if (fullPath === 'enabled') {
-                                this.proxyManager.pluginManager.setPluginEnabled(moduleName, defaultValue);
-                            } else {
-                                setProperty(configObject, fullPath, defaultValue);
-                            }
+                            if (fullPath === 'enabled' || fullPath === 'debug') continue;
+                            
+                            setProperty(configObject, fullPath, defaultValue);
                         }
                     });
                     ctx.sendSuccess(`All ${displayName} settings have been reset to default.`);
@@ -480,6 +483,8 @@ class CommandHandler {
                          if (defaultValue !== undefined) {
                             if (key === 'enabled') {
                                 this.proxyManager.pluginManager.setPluginEnabled(moduleName, defaultValue);
+                            } else if (key === 'debug') {
+                                this.proxyManager.pluginManager.setPluginDebug(moduleName, defaultValue);
                             } else {
                                 setProperty(configObject, key, defaultValue);
                             }
@@ -496,6 +501,8 @@ class CommandHandler {
                     
                     if (key === 'enabled') {
                         this.proxyManager.pluginManager.setPluginEnabled(moduleName, value);
+                    } else if (key === 'debug') {
+                        this.proxyManager.pluginManager.setPluginDebug(moduleName, value);
                     } else {
                         setProperty(configObject, key, value);
                     }
@@ -503,10 +510,19 @@ class CommandHandler {
 
                 if (set || resetSetting || resetAllExecute) {
                     if (saveHandler) saveHandler();
+
+                    const refreshedBaseSchema = schemaBuilder();
+                    const refreshedStandardSettings = this.proxyManager.pluginManager.getStandardPluginSettings(moduleName);
+                    const refreshedSchema = [refreshedStandardSettings, ...refreshedBaseSchema];
+                    
                     this._createConfig({
                         client: this._currentClient,
-                        config: { ...configObject, enabled: this.proxyManager.pluginManager.isPluginEnabled(moduleName) },
-                        schema: schemaBuilder(),
+                        config: { 
+                            ...configObject, 
+                            enabled: this.proxyManager.pluginManager.isPluginEnabled(moduleName),
+                            debug: this.proxyManager.pluginManager.isPluginDebugEnabled(moduleName)
+                        },
+                        schema: refreshedSchema,
                         title: `${displayName || moduleName} Config`,
                         baseCommand: `/${moduleName} config`,
                         page: parseInt(page) || 1
@@ -516,7 +532,11 @@ class CommandHandler {
 
                 this._createConfig({
                     client: this._currentClient,
-                    config: { ...configObject, enabled: this.proxyManager.pluginManager.isPluginEnabled(moduleName) },
+                    config: { 
+                        ...configObject, 
+                        enabled: this.proxyManager.pluginManager.isPluginEnabled(moduleName),
+                        debug: this.proxyManager.pluginManager.isPluginDebugEnabled(moduleName)
+                    },
                     schema: schema,
                     title: `${displayName || moduleName} Config`,
                     baseCommand: `/${moduleName} config`,
@@ -613,7 +633,7 @@ class CommandHandler {
                         break;
                     case 'field':
                          settingText = `[${currentValue}]`;
-                         if (finalEnabled) command = `${baseCommand} ${setting.command} `; // Suggest command
+                         if (finalEnabled) command = `${baseCommand} ${setting.command} `;
                          break;
                 }
                 

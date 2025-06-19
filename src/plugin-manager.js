@@ -9,18 +9,21 @@ class PluginManager {
         
         this.plugins = new Map();
         this.pluginStates = new Map();
+        this.pluginDebugStates = new Map();
         this.pluginEventHandlers = new Map();
     }
 
     /**
      * Register a plugin with the system
      * @param {Object} pluginInfo - Plugin information object
+     * @param {Object|null} instance - The plugin's class instance
      */
-    registerPlugin(pluginInfo) {
+    registerPlugin(pluginInfo, instance = null) {
         if (pluginInfo && pluginInfo.name) {    
             const normalizedName = pluginInfo.name.toLowerCase();
-            this.plugins.set(normalizedName, pluginInfo);
+            this.plugins.set(normalizedName, { info: pluginInfo, instance });
             this.pluginStates.set(normalizedName, true);
+            this.pluginDebugStates.set(normalizedName, false);
             this.pluginEventHandlers.set(normalizedName, new Set());
             console.log(`Registered plugin: ${pluginInfo.name} (enabled)`);
         }
@@ -37,6 +40,19 @@ class PluginManager {
         }
         
         this.pluginStates.set(pluginName, enabled);
+        
+        // If disabling, notify the plugin instance so it can clean up.
+        if (!enabled) {
+            const pluginData = this.plugins.get(pluginName);
+            if (pluginData.instance && typeof pluginData.instance.onDisable === 'function') {
+                try {
+                    pluginData.instance.onDisable();
+                } catch (e) {
+                    console.error(`Error during onDisable for ${pluginName}:`, e);
+                }
+            }
+        }
+        
         const status = enabled ? 'enabled' : 'disabled';
         console.log(`Plugin ${pluginName} ${status}`);
         return true;
@@ -50,18 +66,75 @@ class PluginManager {
     isPluginEnabled(pluginName) {
         return this.pluginStates.get(pluginName) || false;
     }
+
+    /**
+     * Enable or disable debug mode for a plugin
+     * @param {string} pluginName - Name of the plugin
+     * @param {boolean} debug - Whether to enable (true) or disable (false) debug mode
+     */
+    setPluginDebug(pluginName, debug) {
+        if (!this.plugins.has(pluginName)) {
+            return false;
+        }
+        
+        this.pluginDebugStates.set(pluginName, debug);
+        
+        const status = debug ? 'enabled' : 'disabled';
+        console.log(`Plugin ${pluginName} debug ${status}`);
+        return true;
+    }
+    
+    /**
+     * Check if debug mode is enabled for a plugin
+     * @param {string} pluginName - Name of the plugin
+     * @returns {boolean} - True if debug enabled, false if disabled or not found
+     */
+    isPluginDebugEnabled(pluginName) {
+        return this.pluginDebugStates.get(pluginName) || false;
+    }
+
+    /**
+     * Get the standard plugin settings that should be injected into all plugin configs
+     * @param {string} pluginName - Name of the plugin
+     * @returns {Object} - Standard plugin settings schema section
+     */
+    getStandardPluginSettings(pluginName) {
+        const pluginData = this.plugins.get(pluginName);
+        const displayName = pluginData?.info.displayName || pluginName;
+
+        return {
+            label: 'Plugin Controls',
+            resetAll: true,
+            defaults: { enabled: true, debug: false },
+            settings: [
+                {
+                    key: 'enabled',
+                    type: 'toggle',
+                    text: ['DISABLED', 'ENABLED'],
+                    description: `Globally enables or disables the ${displayName} plugin.`
+                },
+                {
+                    key: 'debug',
+                    type: 'toggle',
+                    displayLabel: 'Debug',
+                    description: `Toggles verbose logging for the ${displayName} plugin.`
+                }
+            ]
+        };
+    }
     
     /**
      * Get all plugins and their states
-     * @returns {Array} - Array of {name, displayName, enabled} objects
+     * @returns {Array} - Array of {name, displayName, enabled, debug} objects
      */
     getAllPluginStates() {
         const states = [];
-        for (const [name, info] of this.plugins.entries()) {
+        for (const [name, pluginData] of this.plugins.entries()) {
             states.push({
                 name,
-                displayName: info.displayName || name,
-                enabled: this.pluginStates.get(name) || false
+                displayName: pluginData.info.displayName || name,
+                enabled: this.pluginStates.get(name) || false,
+                debug: this.pluginDebugStates.get(name) || false
             });
         }
         return states;
@@ -72,7 +145,7 @@ class PluginManager {
      * @returns {Array} - Array of plugin info objects
      */
     getLoadedPlugins() {
-        return Array.from(this.plugins.values());
+        return Array.from(this.plugins.values()).map(p => p.info);
     }
 
     /**
@@ -107,34 +180,29 @@ class PluginManager {
     }
 
     /**
-     * Add enable/disable commands for plugin management to a commander.js module.
+     * Add toggle command for plugin management to a commander.js module.
      * @param {Object} moduleCommand - Commander.js command object
      * @param {string} moduleName - Name of the plugin module
      */
     addPluginManagementCommands(moduleCommand, moduleName) {
-        const enableCommand = moduleCommand.createCommand('enable');
-        enableCommand
-            .description(`Enable the ${moduleName} plugin`)
+        const toggleCommand = moduleCommand.createCommand('toggle');
+        toggleCommand
+            .description(`Toggle the ${moduleName} plugin on/off`)
             .action((client) => {
-                if (this.setPluginEnabled(moduleName, true)) {
-                    this.proxyManager.sendChatMessage(client, `§a${moduleName} plugin enabled.`);
+                const currentState = this.isPluginEnabled(moduleName);
+                const newState = !currentState;
+                
+                if (this.setPluginEnabled(moduleName, newState)) {
+                    const pluginData = this.plugins.get(moduleName);
+                    const suffix = pluginData?.info?.suffix || `§8[§e${moduleName.toUpperCase()}§8]§r`;
+                    const prefix = `§8[${this.proxyAPI.proxyPrefix}§8${suffix}§8]§r`;
+                    const status = newState ? '§ais now enabled' : '§cis now disabled';
+                    this.proxyManager.sendChatMessage(client, `${prefix} ${status}§7.`);
                 } else {
-                    this.proxyManager.sendChatMessage(client, `§cFailed to enable ${moduleName} plugin.`);
+                    this.proxyManager.sendChatMessage(client, `§cFailed to toggle ${moduleName} plugin.`);
                 }
             });
-        moduleCommand.addCommand(enableCommand);
-
-        const disableCommand = moduleCommand.createCommand('disable');
-        disableCommand
-            .description(`Disable the ${moduleName} plugin`)
-            .action((client) => {
-                if (this.setPluginEnabled(moduleName, false)) {
-                    this.proxyManager.sendChatMessage(client, `§a${moduleName} plugin disabled.`);
-                } else {
-                    this.proxyManager.sendChatMessage(client, `§cFailed to disable ${moduleName} plugin.`);
-                }
-            });
-        moduleCommand.addCommand(disableCommand);
+        moduleCommand.addCommand(toggleCommand);
     }
 
     /**
@@ -180,11 +248,43 @@ class PluginManager {
             sendToClient: (...args) => this.proxyAPI.sendToClient(...args),
             sendToServer: (...args) => this.proxyAPI.sendToServer(...args),
             sendChatMessage: (...args) => this.proxyAPI.sendChatMessage(...args),
-            registerPlugin: (...args) => this.registerPlugin(...args),
+            registerPlugin: (pluginInfo, instance = null) => this.registerPlugin(pluginInfo, instance),
             getLoadedPlugins: (...args) => this.getLoadedPlugins(...args),
             registerCommands: (...args) => this.proxyAPI.registerCommands(...args),
             kickPlayer: (...args) => this.proxyAPI.kickPlayer(...args),
             isPluginEnabled: (...args) => this.isPluginEnabled(...args),
+            isPluginDebugEnabled: (name = pluginName) => this.isPluginDebugEnabled(name),
+
+            // Automatic prefix generation
+            getPluginPrefix: () => {
+                const pluginData = this.plugins.get(pluginName);
+                const suffix = pluginData?.info?.suffix || `§8[§e${pluginName.toUpperCase()}§8]§r`;
+                return `§8[${this.proxyAPI.proxyPrefix}§8${suffix}§8]§r`;
+            },
+
+            getLogPrefix: () => {
+                const pluginData = this.plugins.get(pluginName);
+                const displayName = pluginData?.info?.displayName || pluginName;
+                return `[${displayName}]`;
+            },
+
+            getDebugPrefix: () => {
+                const pluginData = this.plugins.get(pluginName);
+                const displayName = pluginData?.info?.displayName || pluginName;
+                return `[${displayName}-Debug]`;
+            },
+
+            log: (message, ...args) => {
+                const prefix = pluginAPI.getLogPrefix();
+                console.log(`${prefix} ${message}`, ...args);
+            },
+
+            debugLog: (message, ...args) => {
+                if (this.isPluginDebugEnabled(pluginName)) {
+                    const prefix = pluginAPI.getDebugPrefix();
+                    console.log(`${prefix} ${message}`, ...args);
+                }
+            },
 
             on: (eventName, listener) => {
                 this.registerPluginEventListener(pluginName, eventName, listener);

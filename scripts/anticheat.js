@@ -4,18 +4,344 @@
 const PLUGIN_INFO = {
     name: 'anticheat',
     displayName: 'Anticheat',
-    version: '1.0.0',
-    description: 'Advanced cheater detector system (Inspired by github.com/PugrillaDev)'
+    version: '0.0.3',
+    description: 'Advanced cheater detector system (Inspired by github.com/PugrillaDev)',
+    suffix: '§cAC' // [Starfish-AC]
 };
 
-const DEFAULT_CHECKS_CONFIG = {
-    NoSlowA: { enabled: true, alerts: true, sound: true, vl: 15, cooldown: 2000, description: "Detects sprinting while using items that should slow you down (eating food, drawing bow, blocking sword)." },
-    AutoBlockA: { enabled: true, alerts: true, sound: true, vl: 15, cooldown: 2000, description: "Detects attacking while blocking with a sword." },
-    RotationA: { enabled: true, alerts: true, sound: true, vl: 20, cooldown: 2000, description: "Detects impossible head/body rotations (invalid pitch)." },
-    ScaffoldA: { enabled: true, alerts: true, sound: true, vl: 10, cooldown: 2000, description: "Detects diagonal double-shifting legit scaffold patterns." },
-    ScaffoldB: { enabled: true, alerts: true, sound: true, vl: 10, cooldown: 2000, description: "Detects blatant scaffold (fast movement & snappy rotations" },
-    ScaffoldC: { enabled: true, alerts: true, sound: true, vl: 5, cooldown: 2000, description: "Detects high-speed backward bridging with air time (typical of keep-y)" },
-    TowerA: { enabled: true, alerts: true, sound: true, vl: 10, cooldown: 2000, description: "Detects ascending (towering) faster than normal while placing blocks below." }
+module.exports = (proxyAPI) => {
+    const anticheat = new AnticheatSystem(proxyAPI);
+
+    proxyAPI.registerPlugin(PLUGIN_INFO, anticheat);
+
+    const buildConfigSchema = () => {
+        return generateSchema();
+    };
+    
+    proxyAPI.registerCommands('anticheat', (registry) => {
+        registry.registerConfig({
+            displayName: PLUGIN_INFO.displayName,
+            configObject: anticheat.config,
+            schemaBuilder: buildConfigSchema,
+            saveHandler: () => anticheat.saveConfig()
+        });
+    });
+
+    return PLUGIN_INFO;
+};
+
+const getCheckDefinitions = () => {
+    const definitions = {};
+    for (const [checkName, checkData] of Object.entries(CHECKS)) {
+        definitions[checkName] = checkData.config;
+    }
+    return definitions;
+};
+
+const generateSchema = () => {
+    const schema = [];
+    const checkDefinitions = getCheckDefinitions();
+    
+    for (const checkName in checkDefinitions) {
+        const defaultCheckConfig = checkDefinitions[checkName];
+        
+        schema.push({
+            label: checkName,
+            defaults: defaultCheckConfig,
+            settings: [
+                {
+                    type: 'toggle',
+                    key: `checks.${checkName}.enabled`,
+                    text: ['OFF', 'ON'],
+                    description: defaultCheckConfig.description || `Enables or disables the ${checkName} check.`
+                },
+                {
+                    type: 'soundToggle',
+                    key: `checks.${checkName}.sound`,
+                    condition: (cfg) => cfg.checks[checkName].enabled,
+                    description: 'Toggles sound alerts for this check.'
+                },
+                {
+                    type: 'cycle',
+                    key: `checks.${checkName}.vl`,
+                    values: [
+                        { text: ['(VL: ', '5', ')'], value: 5 },
+                        { text: ['(VL: ', '10', ')'], value: 10 },
+                        { text: ['(VL: ', '15', ')'], value: 15 },
+                        { text: ['(VL: ', '20', ')'], value: 20 },
+                        { text: ['(VL: ', '30', ')'], value: 30 }
+                    ],
+                    condition: (cfg) => cfg.checks[checkName].enabled,
+                    description: 'Sets the violation level to trigger an alert.'
+                },
+                {
+                    type: 'cycle',
+                    key: `checks.${checkName}.cooldown`,
+                    values: [
+                        { text: ['(CD: ', '0s', ')'], value: 0 },
+                        { text: ['(CD: ', '1s', ')'], value: 1000 },
+                        { text: ['(CD: ', '2s', ')'], value: 2000 },
+                        { text: ['(CD: ', '3s', ')'], value: 3000 }
+                    ],
+                    condition: (cfg) => cfg.checks[checkName].enabled,
+                    description: 'Sets the cooldown between alerts for this check.'
+                }
+            ]
+        });
+    }
+    
+    return schema;
+};
+
+// anticheat check definitions with their default configurations
+const CHECKS = {
+    NoSlowA: {
+        config: { 
+            enabled: true, alerts: true, sound: true, vl: 15, cooldown: 2000, 
+            description: "Detects sprinting while using items that should slow you down (eating food, drawing bow, blocking sword)." 
+        },
+        
+        check: function(player, config) {
+            // detect sprinting while using an item that should cause slowdown
+            if (player.isSprinting && player.isUsingItem && (player.isHoldingConsumable() || player.isHoldingBow() || player.isHoldingSword())) {
+                this.addViolation(player, 'NoSlowA');
+                
+                if (this.shouldAlert(player, 'NoSlowA', config)) {
+                    this.flag(player, 'NoSlowA', player.violations.NoSlowA);
+                    this.markAlert(player, 'NoSlowA');
+                }
+            } else {
+                this.reduceViolation(player, 'NoSlowA');
+            }
+        }
+    },
+    
+    AutoBlockA: {
+        config: { 
+            enabled: true, alerts: true, sound: true, vl: 15, cooldown: 2000, 
+            description: "Detects attacking while blocking with a sword." 
+        },
+        
+        check: function(player, config) {
+            // detect swinging while using sword
+            if (player.isUsingItem && player.swingProgress > 0 && player.isHoldingSword()) {
+                this.addViolation(player, 'AutoBlockA');
+                
+                if (this.shouldAlert(player, 'AutoBlockA', config)) {
+                    this.flag(player, 'AutoBlockA', player.violations.AutoBlockA);
+                    this.markAlert(player, 'AutoBlockA');
+                }
+            } else {
+                this.reduceViolation(player, 'AutoBlockA');
+            }
+        }
+    },
+    
+    ScaffoldA: {
+        config: { 
+            enabled: true, alerts: true, sound: true, vl: 10, cooldown: 2000, 
+            description: "Detects diagonal double-shifting legit scaffold patterns." 
+        },
+
+        check: function(player, config) {
+            // detect double-shifting during diagonal bridging (legit scaffold)
+            const moveDistance = player.getMovementDistance();
+            
+            if (moveDistance < 0.03 || player.shiftEvents.length < 6) {
+                this.reduceViolation(player, 'ScaffoldA');
+                return;
+            }
+            
+            const lookingDown = player.isLookingDown();
+            const isDiagonal = player.isDiagonalMovement();
+            const hasRecentSwing = player.hasRecentSwing(20);
+            const swungBlock = player.lastSwingWasBlock();
+
+            let flagged = false;
+            if (lookingDown && isDiagonal && player.onGround && swungBlock && hasRecentSwing) {
+                
+                const veryRecentShifts = player.hasRecentShiftEvents(15);
+                
+                if (veryRecentShifts.length >= 3) {
+                    let totalDistance = 0;
+                    for (let i = 1; i < veryRecentShifts.length; i++) {
+                        const prev = veryRecentShifts[i-1].position;
+                        const curr = veryRecentShifts[i].position;
+                        const dist = Math.sqrt(Math.pow(curr.x - prev.x, 2) + Math.pow(curr.z - prev.z, 2));
+                        totalDistance += dist;
+                    }
+                    
+                    const shiftsPerBlock = veryRecentShifts.length / Math.max(totalDistance, 0.5);
+                    const isActivelyDoubleShifting = shiftsPerBlock > 1.25;
+                    
+                    const mostRecentShift = Math.max(...veryRecentShifts.map(s => s.tick));
+                    const wasRecentShift = (player.ticksExisted - mostRecentShift) <= 5;
+                    
+                    if (isActivelyDoubleShifting && wasRecentShift) {
+                        this.addViolation(player, 'ScaffoldA', 2);
+                        
+                        if (this.shouldAlert(player, 'ScaffoldA', config)) {
+                            this.flag(player, 'ScaffoldA', player.violations.ScaffoldA);
+                            this.markAlert(player, 'ScaffoldA');
+                        }
+                        flagged = true;
+                    }
+                }
+            }
+
+            if (!flagged) {
+                this.reduceViolation(player, 'ScaffoldA');
+            }
+        }
+    },
+    
+    ScaffoldB: {
+        config: { 
+            enabled: true, alerts: true, sound: true, vl: 10, cooldown: 2000, 
+            description: "Detects blatant scaffold (fast movement & snappy rotations)" 
+        },
+
+        check: function(player, config) {
+            // detect scaffold auto-aim behavior
+            const hasRecentSwing = player.hasRecentSwing(10);
+            const lookingDown = player.isLookingDown();
+            const swungBlock = player.lastSwingWasBlock();
+            const notShifting = !player.isCrouching;
+            const notRecentlyShifted = player.ticksExisted - player.lastStopCrouchTick > 100;
+            
+            if (!hasRecentSwing || !lookingDown || !swungBlock || !notShifting || !notRecentlyShifted) {
+                this.reduceViolation(player, 'ScaffoldB');
+                return;
+            }
+            
+            const airRatio = player.getAirTimeRatio(10);
+            const isGrounded = airRatio <= 0.3;
+            
+            if (!isGrounded) {
+                this.reduceViolation(player, 'ScaffoldB');
+                return;
+            }
+            
+            const { microRotations, totalRotations } = player.getRotationAnalysis(10);
+            
+            if (microRotations >= 2) {
+                this.addViolation(player, 'ScaffoldB', 2);
+                
+                if (this.shouldAlert(player, 'ScaffoldB', config)) {
+                    this.flag(player, 'ScaffoldB', player.violations.ScaffoldB);
+                    this.markAlert(player, 'ScaffoldB');
+                }
+            } else if (totalRotations == 0) {
+                this.reduceViolation(player, 'ScaffoldB');
+            }
+        }
+    },
+    
+    ScaffoldC: {        //FALSES OFTEN, needs rework
+        config: { 
+            enabled: true, alerts: true, sound: true, vl: 5, cooldown: 2000, 
+            description: "Detects high-speed backward bridging with air time (typical of keep-y)" 
+        },
+
+        check: function(player, config) {
+            // detect scaffold keep-y behavior
+            const lookingDown = player.isLookingDown();
+            const hasRecentSwing = player.hasRecentSwing(10);
+            const crouchCondition = player.lastStopCrouchTick >= player.lastCrouchTick;
+            const longSinceUncrouch = player.ticksExisted - player.lastStopCrouchTick > 30;
+            const backwardMovement = player.isBackwardMovement();
+            const hasPositionHistory = player.previousPositions.length >= 20;
+            const swungBlock = player.lastSwingWasBlock();
+            
+            if (lookingDown && hasRecentSwing && swungBlock && crouchCondition && longSinceUncrouch && backwardMovement && hasPositionHistory) {
+                if (player.hasSignificantVerticalMovement(1)) {
+                    this.reduceViolation(player, 'ScaffoldC');
+                    return;
+                }
+                
+                const airRatio = player.getAirTimeRatio(15);
+                const isBridging = airRatio > 0.2;
+                
+                if (!isBridging) {
+                    this.reduceViolation(player, 'ScaffoldC', 2);
+                    return;
+                }
+
+                const avgSpeedPerSecond = player.getAverageSpeed(15);
+                const highSpeedCheck = avgSpeedPerSecond > 5;
+                
+                if (!highSpeedCheck) {
+                    this.reduceViolation(player, 'ScaffoldC');
+                    return;
+                }
+                
+                const firstPos = player.previousPositions[player.previousPositions.length - 1];
+                const lastPos = player.previousPositions[0];
+                const dx = lastPos.x - firstPos.x;
+                const dz = lastPos.z - firstPos.z;
+                const totalDistance = Math.sqrt(dx * dx + dz * dz);
+                
+                const distanceCheck = totalDistance > 3.4;
+
+                if (distanceCheck) {
+                    this.addViolation(player, 'ScaffoldC');
+                    
+                    if (this.shouldAlert(player, 'ScaffoldC', config)) {
+                        this.flag(player, 'ScaffoldC', player.violations.ScaffoldC);
+                        this.markAlert(player, 'ScaffoldC');
+                    }
+                } else {
+                    this.reduceViolation(player, 'ScaffoldC');
+                }
+            } else {
+                this.reduceViolation(player, 'ScaffoldC');
+            }
+        }
+    },
+    
+    TowerA: {       // fireball jumping and spamming blocks beneath falses this
+        config: { 
+            enabled: true, alerts: true, sound: true, vl: 10, cooldown: 2000, 
+            description: "Detects ascending (towering) faster than normal while placing blocks below." 
+        },
+        
+        check: function(player, config) {
+            // detect towering up too fast
+            if (player.hasJumpBoost) {
+                return;
+            }
+            
+            if (!player.isLookingDown()) {
+                this.reduceViolation(player, 'TowerA');
+                return;
+            }
+
+            if (player.previousPositions.length < 6) {
+                return;
+            }
+
+            const hasRecentSwing = player.hasRecentSwing(5);
+            const swungBlock = player.lastSwingWasBlock();
+
+            if (!hasRecentSwing || !swungBlock) {
+                return;
+            }
+
+            const verticalSpeed = player.getVerticalSpeed(6);
+            const isToweringSpeed = verticalSpeed > 0.5;
+
+            if (isToweringSpeed) {
+                this.addViolation(player, 'TowerA', 2);
+                
+                if (this.shouldAlert(player, 'TowerA', config)) {
+                    this.flag(player, 'TowerA', player.violations.TowerA);
+                    this.markAlert(player, 'TowerA');
+                }
+            } else {
+                this.reduceViolation(player, 'TowerA');
+            }
+        }
+    }
 };
 
 class PlayerData {
@@ -45,25 +371,13 @@ class PlayerData {
         this.lastCrouchTick = 0;
         this.lastStopCrouchTick = 0;
         
-        this.violations = {
-            NoSlowA: 0,
-            AutoBlockA: 0,
-            RotationA: 0,
-            ScaffoldA: 0,
-            ScaffoldB: 0,
-            ScaffoldC: 0,
-            TowerA: 0
-        };
+        this.violations = {};
+        this.lastAlerts = {};
         
-        this.lastAlerts = {
-            NoSlowA: 0,
-            AutoBlockA: 0,
-            RotationA: 0,
-            ScaffoldA: 0,
-            ScaffoldB: 0,
-            ScaffoldC: 0,
-            TowerA: 0
-        };
+        for (const checkName of Object.keys(CHECKS)) {
+            this.violations[checkName] = 0;
+            this.lastAlerts[checkName] = 0;
+        }
         
         this.lastSwingItem = null;
         this.hasJumpBoost = false;
@@ -169,6 +483,135 @@ class PlayerData {
         if (!this.lastSwingItem || !this.lastSwingItem.blockId) return false;
         return this.lastSwingItem.blockId < 256 && this.lastSwingItem.blockId > 0;
     }
+
+    isLookingDown() {
+        return this.pitch >= 70;
+    }
+    
+    hasRecentSwing(maxTicks = 10) {
+        return this.ticksExisted - this.lastSwingTick <= maxTicks;
+    }
+    
+    hasRecentShiftEvents(maxTicks = 15) {
+        return this.shiftEvents.filter(e => 
+            e.type === 'start' && (this.ticksExisted - e.tick) <= maxTicks
+        );
+    }
+    
+    getMovementDistance() {
+        const dx = this.position.x - this.lastPosition.x;
+        const dz = this.position.z - this.lastPosition.z;
+        return Math.sqrt(dx * dx + dz * dz);
+    }
+    
+    isDiagonalMovement() {
+        const dx = this.position.x - this.lastPosition.x;
+        const dz = this.position.z - this.lastPosition.z;
+        const absX = Math.abs(dx);
+        const absZ = Math.abs(dz);
+        return absX > 0.015 && absZ > 0.015 && Math.abs(absX - absZ) < Math.min(absX, absZ) * 0.3;
+    }
+    
+    getAirTimeRatio(sampleSize = 10) {
+        const recentPositions = this.previousPositions.slice(-sampleSize);
+        let airTime = 0;
+        let groundTime = 0;
+        
+        for (const pos of recentPositions) {
+            if (pos.onGround !== undefined) {
+                if (pos.onGround) {
+                    groundTime++;
+                } else {
+                    airTime++;
+                }
+            }
+        }
+        
+        const totalTime = airTime + groundTime;
+        return totalTime > 0 ? airTime / totalTime : 0;
+    }
+    
+    getRotationAnalysis(sampleSize = 10) {
+        const recentPositions = this.previousPositions.slice(-sampleSize);
+        let microRotations = 0;
+        let totalRotations = 0;
+        
+        for (let i = 1; i < recentPositions.length; i++) {
+            const prev = recentPositions[i-1];
+            const curr = recentPositions[i];
+            
+            if (prev.yaw !== undefined && curr.yaw !== undefined) {
+                let yawDiff = Math.abs(curr.yaw - prev.yaw);
+                if (yawDiff > 180) yawDiff = 360 - yawDiff;
+                
+                if (yawDiff > 0.1) {
+                    totalRotations++;
+                }
+                
+                if (yawDiff >= 0.5 && yawDiff <= 25) {
+                    microRotations++;
+                }
+            }
+        }
+        
+        return { microRotations, totalRotations };
+    }
+    
+    getAverageSpeed(sampleSize = 15) {
+        const recentPositions = this.previousPositions.slice(-sampleSize);
+        let totalSpeed = 0;
+        let speedSamples = 0;
+        
+        for (let i = 1; i < recentPositions.length; i++) {
+            const current = recentPositions[i];
+            const previous = recentPositions[i - 1];
+            if (current.x !== undefined && previous.x !== undefined && 
+                current.z !== undefined && previous.z !== undefined) {
+                const dx = current.x - previous.x;
+                const dz = current.z - previous.z;
+                const speed2D = Math.sqrt(dx * dx + dz * dz);
+                totalSpeed += speed2D;
+                speedSamples++;
+            }
+        }
+        
+        const avgSpeedPerTick = speedSamples > 0 ? totalSpeed / speedSamples : 0;
+        return avgSpeedPerTick * 20;
+    }
+    
+    getVerticalSpeed(ticksBack = 6) {
+        if (this.previousPositions.length < ticksBack) {
+            return 0;
+        }
+        
+        const currentPos = this.position;
+        const pastPos = this.previousPositions[this.previousPositions.length - ticksBack];
+        const ticksElapsed = this.ticksExisted - pastPos.tick;
+        
+        if (ticksElapsed <= 0) return 0;
+        
+        const deltaY = currentPos.y - pastPos.y;
+        return deltaY / ticksElapsed;
+    }
+    
+    isBackwardMovement() {
+        const moveYaw = this.getMoveYaw();
+        return moveYaw !== null && Math.abs(moveYaw) >= 90;
+    }
+    
+    hasSignificantVerticalMovement(threshold = 1) {
+        if (this.previousPositions.length < 2) return false;
+        const firstPos = this.previousPositions[this.previousPositions.length - 1];
+        const lastPos = this.previousPositions[0];
+        return Math.abs(lastPos.y - firstPos.y) > threshold;
+    }
+    
+    tick() {
+        this.ticksExisted++;
+        if (this.swingProgress > 0) {
+            this.swingProgress--;
+        }
+    }
 }
 
 class AnticheatSystem {
@@ -180,19 +623,28 @@ class AnticheatSystem {
         this.uuidToDisplayName = new Map();
         this.userPosition = null;
         
-        this.PLUGIN_PREFIX = `§8[${this.proxyAPI.proxyPrefix}§8-§cAC§8]§r`;
-        
         this.config = {
-            checks: JSON.parse(JSON.stringify(DEFAULT_CHECKS_CONFIG)),
-            debug: false,
+            checks: JSON.parse(JSON.stringify(getCheckDefinitions())),
         };
         
         this.registerHandlers();
     }
     
     saveConfig() {
-        // placeholder
-        console.log('[Anticheat] Config updated.');
+        // placeholder for now
+        this.proxyAPI.log('Config updated.');
+    }
+
+    onDisable() {
+        this.reset();
+    }
+
+    reset() {
+        this.players.clear();
+        this.entityToPlayer.clear();
+        this.uuidToName.clear();
+        this.uuidToDisplayName.clear();
+        this.proxyAPI.debugLog('Cleared all tracked player data.');
     }
     
     registerHandlers() {
@@ -200,6 +652,10 @@ class AnticheatSystem {
             if (!player || !this.proxyAPI.isPluginEnabled('anticheat')) return;
             
             switch (meta.name) {
+                case 'respawn':
+                    this.proxyAPI.debugLog('Respawn detected, clearing data.');
+                    this.reset();
+                    break;
                 case 'player_info':
                     this.handlePlayerInfo(data);
                     break;
@@ -244,33 +700,10 @@ class AnticheatSystem {
         });
         
         this.proxyAPI.on('playerLeave', ({ username, player }) => {
-            this.players.clear();
-            this.entityToPlayer.clear();
-            this.uuidToName.clear();
-            this.uuidToDisplayName.clear();
+            this.reset();
         });
     }
-    
-    handlePlayerInfo(data) {
-        if (data.action === 0) {
-            data.data.forEach(player => {
-                if (player.name && player.UUID) {
-                    this.uuidToName.set(player.UUID, player.name);
-                    let displayName = player.name;
-                    if (player.displayName) {
-                        try {
-                            const parsed = JSON.parse(player.displayName);
-                            displayName = this.extractTextFromJSON(parsed);
-                        } catch (e) {
-                            displayName = player.displayName;
-                        }
-                    }
-                    this.uuidToDisplayName.set(player.UUID, displayName);
-                }
-            });
-        }
-    }
-    
+
     extractTextFromJSON(jsonText) {
         if (typeof jsonText === 'string') {
             return jsonText;
@@ -295,6 +728,54 @@ class AnticheatSystem {
         return result || 'Unknown';
     }
     
+    addViolation(player, checkName, amount = 1) {
+        if (player.violations[checkName] !== undefined) {
+            player.violations[checkName] += amount;
+        }
+    }
+    
+    reduceViolation(player, checkName, amount = 1) {
+        if (player.violations[checkName] !== undefined) {
+            player.violations[checkName] = Math.max(0, player.violations[checkName] - amount);
+        }
+    }
+    
+    shouldAlert(player, checkName, config) {
+        if (!player.violations[checkName] || !player.lastAlerts[checkName]) return false;
+        
+        const hasViolations = player.violations[checkName] >= config.vl;
+        const timeSinceLastAlert = Date.now() - player.lastAlerts[checkName];
+        const cooldownPassed = timeSinceLastAlert > config.cooldown;
+        
+        return hasViolations && cooldownPassed;
+    }
+    
+    markAlert(player, checkName) {
+        if (player.lastAlerts[checkName] !== undefined) {
+            player.lastAlerts[checkName] = Date.now();
+        }
+    }
+    
+    handlePlayerInfo(data) {
+        if (data.action === 0) {
+            data.data.forEach(player => {
+                if (player.name && player.UUID) {
+                    this.uuidToName.set(player.UUID, player.name);
+                    let displayName = player.name;
+                    if (player.displayName) {
+                        try {
+                            const parsed = JSON.parse(player.displayName);
+                            displayName = this.extractTextFromJSON(parsed);
+                        } catch (e) {
+                            displayName = player.displayName;
+                        }
+                    }
+                    this.uuidToDisplayName.set(player.UUID, displayName);
+                }
+            });
+        }
+    }
+    
     handleEntitySpawn(data) {
         const playerName = this.uuidToName.get(data.playerUUID) || 'Unknown';
         const displayName = this.uuidToDisplayName.get(data.playerUUID) || playerName;
@@ -315,9 +796,7 @@ class AnticheatSystem {
         this.players.set(playerName, player);
         this.entityToPlayer.set(data.entityId, player);
         
-        if (this.config.debug) {
-            console.log(`[Anticheat-Debug] Player spawned: ${playerName} (${displayName}) - Entity ID: ${data.entityId}`);
-        }
+        this.proxyAPI.debugLog(`Player spawned: ${playerName} (${displayName}) - Entity ID: ${data.entityId}`);
     }
     
     handleEntityDestroy(data) {
@@ -383,17 +862,6 @@ class AnticheatSystem {
         });
     }
     
-    handleAnimation(data) {
-        const player = this.entityToPlayer.get(data.entityId);
-        if (!player) return;
-        
-        if (data.animation === 0) {
-            player.swingProgress = 6;
-            player.lastSwingTick = player.ticksExisted;
-            player.lastSwingItem = player.heldItem;
-        }
-    }
-    
     handleEntityMove(data, packetType) {
         const player = this.entityToPlayer.get(data.entityId);
         if (!player) return;
@@ -421,11 +889,7 @@ class AnticheatSystem {
         }
         
         this.runChecks(player);
-        
-        player.ticksExisted++;
-        if (player.swingProgress > 0) {
-            player.swingProgress--;
-        }
+        player.tick();
     }
     
     handleEntityTeleport(data) {
@@ -475,6 +939,17 @@ class AnticheatSystem {
             player.hasJumpBoost = false;
         }
     }
+
+    handleAnimation(data) {
+        const player = this.entityToPlayer.get(data.entityId);
+        if (!player) return;
+        
+        if (data.animation === 0) {
+            player.swingProgress = 6;
+            player.lastSwingTick = player.ticksExisted;
+            player.lastSwingItem = player.heldItem;
+        }
+    }
     
     runChecks(player) {
         if (!this.proxyAPI.isPluginEnabled('anticheat')) return;
@@ -482,359 +957,11 @@ class AnticheatSystem {
         Object.entries(this.config.checks).forEach(([checkName, checkConfig]) => {
             if (!checkConfig.enabled) return;
             
-            switch (checkName) {
-                case 'NoSlowA':
-                    this.checkNoSlowA(player, checkConfig);
-                    break;
-                case 'AutoBlockA':
-                    this.checkAutoBlockA(player, checkConfig);
-                    break;
-                case 'RotationA':
-                    this.checkRotationA(player, checkConfig);
-                    break;
-                case 'ScaffoldA':
-                    this.checkScaffoldA(player, checkConfig);
-                    break;
-                case 'ScaffoldB':
-                    this.checkScaffoldB(player, checkConfig);
-                    break;
-                case 'ScaffoldC':
-                    this.checkScaffoldC(player, checkConfig);
-                    break;
-                case 'TowerA':
-                    this.checkTowerA(player, checkConfig);
-                    break;
+            const checkDefinition = CHECKS[checkName];
+            if (checkDefinition && checkDefinition.check) {
+                checkDefinition.check.call(this, player, checkConfig);
             }
         });
-    }
-    
-    checkNoSlowA(player, config) {
-        // detect sprinting while using an item that should cause slowdown
-        if (player.isSprinting && player.isUsingItem && (player.isHoldingConsumable() || player.isHoldingBow() || player.isHoldingSword())) {
-            player.violations.NoSlowA++;
-    
-            if (player.violations.NoSlowA >= config.vl) {
-                const timeSinceLastAlert = Date.now() - player.lastAlerts.NoSlowA;
-                if (timeSinceLastAlert > config.cooldown) {
-                    this.flag(player, 'NoSlowA', player.violations.NoSlowA);
-                    player.lastAlerts.NoSlowA = Date.now();
-                }
-            }
-        } else {
-            player.violations.NoSlowA = Math.max(0, player.violations.NoSlowA - 1);
-        }
-    }
-    
-    checkAutoBlockA(player, config) {
-        // detect swinging while using sword
-        if (player.isUsingItem && player.swingProgress > 0 && player.isHoldingSword()) {
-            player.violations.AutoBlockA++;
-            
-            if (player.violations.AutoBlockA >= config.vl) {
-                const timeSinceLastAlert = Date.now() - player.lastAlerts.AutoBlockA;
-                if (timeSinceLastAlert > config.cooldown) {
-                    this.flag(player, 'AutoBlockA', player.violations.AutoBlockA);
-                    player.lastAlerts.AutoBlockA = Date.now();
-                }
-            }
-        } else {
-            player.violations.AutoBlockA = Math.max(0, player.violations.AutoBlockA - 1);
-        }
-    }
-    
-    checkRotationA(player, config) {
-        // detect invalid pitch values
-        if (Math.abs(player.pitch) > 90) {
-            player.violations.RotationA++;
-            
-            if (player.violations.RotationA >= config.vl) {
-                const timeSinceLastAlert = Date.now() - player.lastAlerts.RotationA;
-                if (timeSinceLastAlert > config.cooldown) {
-                    this.flag(player, 'RotationA', player.violations.RotationA);
-                    player.lastAlerts.RotationA = Date.now();
-                }
-            }
-        } else {
-            player.violations.RotationA = Math.max(0, player.violations.RotationA - 1);
-        }
-    }
-    
-    checkScaffoldA(player, config) {
-        // detect double-shifting during diagonal bridging (legit scaffold)
-        const lookingDown = player.pitch >= 70;
-
-        const dx = player.position.x - player.lastPosition.x;
-        const dz = player.position.z - player.lastPosition.z;
-        const moveDistance = Math.sqrt(dx * dx + dz * dz);
-        
-        if (moveDistance < 0.03 || player.shiftEvents.length < 6) {
-            player.violations.ScaffoldB = Math.max(0, player.violations.ScaffoldB - 1);
-            return;
-        }
-        
-        const absX = Math.abs(dx);
-        const absZ = Math.abs(dz);
-        const isDiagonal = absX > 0.015 && absZ > 0.015 && Math.abs(absX - absZ) < Math.min(absX, absZ) * 0.3;
-        const timeSinceLastSwing = player.ticksExisted - player.lastSwingTick;
-        const swungBlock = player.lastSwingWasBlock();
-
-        let flagged = false;
-        if (lookingDown && isDiagonal && player.onGround && swungBlock && timeSinceLastSwing <= 20) {
-            
-            const veryRecentShifts = player.shiftEvents.filter(e => 
-                e.type === 'start' && (player.ticksExisted - e.tick) <= 15
-            );
-            
-            if (veryRecentShifts.length >= 3) {
-                let totalDistance = 0;
-                for (let i = 1; i < veryRecentShifts.length; i++) {
-                    const prev = veryRecentShifts[i-1].position;
-                    const curr = veryRecentShifts[i].position;
-                    const dist = Math.sqrt(Math.pow(curr.x - prev.x, 2) + Math.pow(curr.z - prev.z, 2));
-                    totalDistance += dist;
-                }
-                
-                const shiftsPerBlock = veryRecentShifts.length / Math.max(totalDistance, 0.5);
-                const isActivelyDoubleShifting = shiftsPerBlock > 1.25;
-                
-                const mostRecentShift = Math.max(...veryRecentShifts.map(s => s.tick));
-                const wasRecentShift = (player.ticksExisted - mostRecentShift) <= 5;
-                
-                if (isActivelyDoubleShifting && wasRecentShift) {
-                    player.violations.ScaffoldA += 2;
-            if (player.violations.ScaffoldA >= config.vl) {
-                const timeSinceLastAlert = Date.now() - player.lastAlerts.ScaffoldA;
-                if (timeSinceLastAlert > config.cooldown) {
-                    this.flag(player, 'ScaffoldA', player.violations.ScaffoldA);
-                    player.lastAlerts.ScaffoldA = Date.now();
-                }
-            }
-                    flagged = true;
-                }
-            }
-        }
-
-        if (!flagged) {
-            player.violations.ScaffoldA = Math.max(0, player.violations.ScaffoldA - 1);
-        }
-    }
-    
-    checkScaffoldB(player, config) {
-        // detect scaffold auto-aim behavior
-        const recentSwing = player.ticksExisted - player.lastSwingTick <= 10;
-        const lookingDown = player.pitch >= 70;
-        const swungBlock = player.lastSwingWasBlock();
-        const notShifting = !player.isCrouching;
-        const notRecentlyShifted = player.ticksExisted - player.lastStopCrouchTick > 100;
-        
-        if (!recentSwing || !lookingDown || !swungBlock || !notShifting || !notRecentlyShifted) {
-            player.violations.ScaffoldB = Math.max(0, player.violations.ScaffoldB - 1);
-            return;
-        }
-        
-        const recentOnGroundData = player.previousPositions.slice(-10);
-        let airTime = 0;
-        let groundTime = 0;
-        
-        for (const pos of recentOnGroundData) {
-            if (pos.onGround !== undefined) {
-                if (pos.onGround) {
-                    groundTime++;
-                } else {
-                    airTime++;
-                }
-            }
-        }
-        
-        const totalTime = airTime + groundTime;
-        const airRatio = totalTime > 0 ? airTime / totalTime : 0;
-        const isGrounded = airRatio <= 0.3;
-        
-        if (!isGrounded) {
-            player.violations.ScaffoldB = Math.max(0, player.violations.ScaffoldB - 1);
-            return;
-        }
-        
-        const recentPositions = player.previousPositions.slice(-10);
-        let microRotations = 0;
-        let totalRotations = 0;
-        
-        for (let i = 1; i < recentPositions.length; i++) {
-            const prev = recentPositions[i-1];
-            const curr = recentPositions[i];
-            
-            if (prev.yaw !== undefined && curr.yaw !== undefined) {
-                let yawDiff = Math.abs(curr.yaw - prev.yaw);
-                if (yawDiff > 180) yawDiff = 360 - yawDiff;
-                
-                if (yawDiff > 0.1) {
-                    totalRotations++;
-                }
-                
-                if (yawDiff >= 0.5 && yawDiff <= 25) {
-                    microRotations++;
-                }
-            }
-        }
-        
-        if (microRotations >= 2) {
-            player.violations.ScaffoldB += 2;
-            
-            if (player.violations.ScaffoldB >= config.vl) {
-                const timeSinceLastAlert = Date.now() - player.lastAlerts.ScaffoldB;
-                if (timeSinceLastAlert > config.cooldown) {
-                    this.flag(player, 'ScaffoldB', player.violations.ScaffoldB);
-                    player.lastAlerts.ScaffoldB = Date.now();
-                }
-            }
-        } else if (totalRotations == 0) {
-            player.violations.ScaffoldB = Math.max(0, player.violations.ScaffoldB - 1);
-        }
-    }
-
-    checkScaffoldC(player, config) {
-        // detect scaffold keep-y behavior
-        const lookingDown = player.pitch >= 70;
-        const moveYaw = player.getMoveYaw();
-        const ticksExisted = player.ticksExisted;
-        const lastSwing = player.lastSwingTick;
-        const lastStartCrouch = player.lastCrouchTick;
-        const lastStopCrouch = player.lastStopCrouchTick;
-        
-        const recentSwing = ticksExisted - lastSwing <= 10;
-        const crouchCondition = lastStopCrouch >= lastStartCrouch;
-        const longSinceUncrouch = ticksExisted - lastStopCrouch > 30;
-        const backwardMovement = Math.abs(moveYaw) >= 90;
-        const hasPositionHistory = player.previousPositions.length >= 20;
-        const swungBlock = player.lastSwingWasBlock();
-        
-        if (lookingDown && recentSwing && swungBlock && crouchCondition && longSinceUncrouch && backwardMovement && hasPositionHistory) {
-            const firstPos = player.previousPositions[player.previousPositions.length - 1];
-            const lastPos = player.previousPositions[0];
-            const verticalMovement = Math.abs(lastPos.y - firstPos.y);
-            
-            if (verticalMovement > 1) {
-                player.violations.ScaffoldC = Math.max(0, player.violations.ScaffoldC - 1);
-                return;
-            }
-            
-            const recentPositions = player.previousPositions.slice(-15);
-            let airTime = 0;
-            let groundTime = 0;
-            
-            for (const pos of recentPositions) {
-                if (pos.onGround !== undefined) {
-                    if (pos.onGround) {
-                        groundTime++;
-                    } else {
-                        airTime++;
-                    }
-                }
-            }
-            
-            const totalTime = airTime + groundTime;
-            const airRatio = totalTime > 0 ? airTime / totalTime : 0;
-            const isBridging = airRatio > 0.2;
-            
-            if (!isBridging) {
-                player.violations.ScaffoldC = Math.max(0, player.violations.ScaffoldC - 2);
-                return;
-            }
-
-            let totalSpeed = 0;
-            let speedSamples = 0;
-            for (let i = 1; i < recentPositions.length; i++) {
-                const current = recentPositions[i];
-                const previous = recentPositions[i - 1];
-                if (current.x !== undefined && previous.x !== undefined && 
-                    current.z !== undefined && previous.z !== undefined) {
-                    const dx = current.x - previous.x;
-                    const dz = current.z - previous.z;
-                    const speed2D = Math.sqrt(dx * dx + dz * dz);
-                    totalSpeed += speed2D;
-                    speedSamples++;
-                }
-            }
-            const avgSpeedPerTick = speedSamples > 0 ? totalSpeed / speedSamples : 0;
-            const avgSpeedPerSecond = avgSpeedPerTick * 20;
-
-            const highSpeedCheck = avgSpeedPerSecond > 5;
-            
-            if (!highSpeedCheck) {
-                player.violations.ScaffoldC = Math.max(0, player.violations.ScaffoldC - 1);
-                return;
-            }
-            
-            const dx = lastPos.x - firstPos.x;
-            const dz = lastPos.z - firstPos.z;
-            const totalDistance = Math.sqrt(dx * dx + dz * dz);
-            
-            const distanceCheck = totalDistance > 3.4;
-
-            if (distanceCheck) {
-                player.violations.ScaffoldC++;
-                
-                if (player.violations.ScaffoldC >= config.vl) {
-                    const timeSinceLastAlert = Date.now() - player.lastAlerts.ScaffoldC;
-                    if (timeSinceLastAlert > config.cooldown) {
-                        this.flag(player, 'ScaffoldC', player.violations.ScaffoldC);
-                        player.lastAlerts.ScaffoldC = Date.now();
-                    }
-                }
-            } else {
-                player.violations.ScaffoldC = Math.max(0, player.violations.ScaffoldC - 1);
-            }
-        } else {
-            player.violations.ScaffoldC = Math.max(0, player.violations.ScaffoldC - 1);
-        }
-    }
-    
-    checkTowerA(player, config) {
-        // detect towering up too fast
-        if (player.hasJumpBoost) {
-            return;
-        }
-        
-        const lookingDown = player.pitch >= 70;
-        if (!lookingDown) {
-            player.violations.TowerA = Math.max(0, player.violations.TowerA - 1);
-            return;
-        }
-
-        if (player.previousPositions.length < 6) {
-            return;
-        }
-
-        const recentSwing = player.ticksExisted - player.lastSwingTick <= 5;
-        const swungBlock = player.lastSwingWasBlock();
-
-        if (!recentSwing || !swungBlock) {
-            return;
-        }
-
-        const currentPos = player.position;
-        const pastPos = player.previousPositions[player.previousPositions.length - 6];
-        const ticksElapsed = player.ticksExisted - pastPos.tick;
-
-        if (ticksElapsed <= 0) return;
-
-        const deltaY = currentPos.y - pastPos.y;
-        const verticalSpeed = deltaY / ticksElapsed;
-
-        const isToweringSpeed = verticalSpeed > 0.5;
-
-        if (isToweringSpeed) {
-            player.violations.TowerA += 2;
-            if (player.violations.TowerA >= config.vl) {
-                const timeSinceLastAlert = Date.now() - player.lastAlerts.TowerA;
-                if (timeSinceLastAlert > config.cooldown) {
-                    this.flag(player, 'TowerA', player.violations.TowerA);
-                    player.lastAlerts.TowerA = Date.now();
-                }
-            }
-        } else {
-            player.violations.TowerA = Math.max(0, player.violations.TowerA - 1);
-        }
     }
     
     flag(player, checkName, vl) {
@@ -844,12 +971,10 @@ class AnticheatSystem {
         const currentPlayer = this.proxyAPI.currentPlayer;
         if (!currentPlayer) return;
 
-        if (this.config.debug) {
-            console.log(`[Anticheat-Debug] Flagging ${player.displayName} for ${checkName} (VL: ${vl})`);
-        }
+        this.proxyAPI.debugLog(`Flagging ${player.displayName} for ${checkName} (VL: ${vl})`);
 
         if (checkConfig.alerts) {
-            const message = `${this.PLUGIN_PREFIX} ${player.displayName} §7flagged §c${checkName} §8(§7VL: ${vl}§8)`;
+            const message = `${this.proxyAPI.getPluginPrefix()} ${player.displayName} §7flagged §c${checkName} §8(§7VL: ${vl}§8)`;
             this.proxyAPI.sendChatMessage(currentPlayer.client, message);
         }
         
@@ -865,98 +990,3 @@ class AnticheatSystem {
         }
     }
 }
-
-
-module.exports = (proxyAPI) => {
-    const anticheat = new AnticheatSystem(proxyAPI);
-
-    proxyAPI.registerPlugin(PLUGIN_INFO);
-
-    const buildConfigSchema = () => {
-        const schema = [];
-        
-        const pluginEnabled = proxyAPI.isPluginEnabled('anticheat');
-
-        schema.push({
-            label: 'Plugin',
-            resetAll: true,
-            defaults: { enabled: true, debug: false },
-            settings: [
-                {
-                    key: 'enabled',
-                    type: 'toggle',
-                    text: ['DISABLED', 'ENABLED'],
-                    description: 'Globally enables or disables the Anticheat plugin.'
-                },
-                {
-                    key: 'debug',
-                    type: 'toggle',
-                    displayLabel: 'Debug',
-                    description: 'Toggles verbose logging for the anticheat system.'
-                }
-            ]
-        });
-
-        for (const checkName in DEFAULT_CHECKS_CONFIG) {
-            const defaultCheckConfig = DEFAULT_CHECKS_CONFIG[checkName];
-            
-            schema.push({
-                label: checkName,
-                isEnabled: (cfg) => pluginEnabled && cfg.checks[checkName].enabled,
-                defaults: defaultCheckConfig,
-                settings: [
-                    {
-                        type: 'toggle',
-                        key: `checks.${checkName}.enabled`,
-                        text: ['OFF', 'ON'],
-                        description: `Enables or disables the ${checkName} check.`
-                    },
-                    {
-                        type: 'soundToggle',
-                        key: `checks.${checkName}.sound`,
-                        condition: (cfg) => cfg.checks[checkName].enabled,
-                        description: 'Toggles sound alerts for this check.'
-                    },
-                    {
-                        type: 'cycle',
-                        key: `checks.${checkName}.vl`,
-                        values: [
-                            { text: ['(VL: ', '5', ')'], value: 5 },
-                            { text: ['(VL: ', '10', ')'], value: 10 },
-                            { text: ['(VL: ', '15', ')'], value: 15 },
-                            { text: ['(VL: ', '20', ')'], value: 20 },
-                            { text: ['(VL: ', '30', ')'], value: 30 }
-                        ],
-                        condition: (cfg) => cfg.checks[checkName].enabled,
-                        description: 'Sets the violation level to trigger an alert.'
-                    },
-                    {
-                        type: 'cycle',
-                        key: `checks.${checkName}.cooldown`,
-                        values: [
-                            { text: ['(CD: ', '1s', ')'], value: 1000 },
-                            { text: ['(CD: ', '2s', ')'], value: 2000 },
-                            { text: ['(CD: ', '5s', ')'], value: 5000 }
-                        ],
-                        condition: (cfg) => cfg.checks[checkName].enabled,
-                        description: 'Sets the cooldown between alerts for this check.'
-                    }
-                ]
-            });
-        }
-        return schema;
-    };
-
-
-    proxyAPI.registerCommands('anticheat', (registry) => {
-        
-        registry.registerConfig({
-            displayName: PLUGIN_INFO.displayName,
-            configObject: anticheat.config,
-            schemaBuilder: buildConfigSchema,
-            saveHandler: () => anticheat.saveConfig()
-        });
-    });
-
-    return PLUGIN_INFO;
-};

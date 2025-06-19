@@ -1,307 +1,21 @@
 // Automatic Denicker
-// Detects nicked players by analyzing skin data (Credits to github.com/PugrillaDev)
+// Adapted from Pug's Denicker Raven script (github.com/PugrillaDev)
 
 const PLUGIN_INFO = {
     name: 'denicker',
     displayName: 'Denicker',
-    version: '1.0.0',
-    description: 'Detects nicked players by analyzing skin data (Credits to github.com/PugrillaDev)'
+    version: '0.0.3',
+    description: 'Detects and resolves nicked players (Inspired by github.com/PugrillaDev)',
+    suffix: '§cDN' // [Starfish-DN]
 };
-
-class DenickerSystem {
-    constructor(proxyAPI) {
-        this.proxyAPI = proxyAPI;
-        this.parsedPlayers = new Set();
-        this.noColorTicks = new Map();
-        
-        this.PLUGIN_PREFIX = `§8[${this.proxyAPI.proxyPrefix}§8-§cDN§8]§r`;
-        
-        this.config = {
-            showUnresolvedNicks: true,
-            audioAlerts: true,
-            alertDelay: 1000,
-            debug: false,
-        };
-        
-        this.registerHandlers();
-    }
-    
-    /**
-     * Extracts clean text from Minecraft JSON text components (same as anticheat)
-     */
-    extractTextFromJSON(jsonText) {
-        if (typeof jsonText === 'string') {
-            return jsonText;
-        }
-        
-        let result = '';
-        
-        if (jsonText.text) {
-            result += jsonText.text;
-        }
-        
-        if (jsonText.extra && Array.isArray(jsonText.extra)) {
-            for (const extra of jsonText.extra) {
-                if (typeof extra === 'string') {
-                    result += extra;
-                } else if (extra.text) {
-                    result += extra.text;
-                }
-            }
-        }
-        
-        return result || 'Unknown';
-    }
-    
-    /**
-     * Extracts team color from a player's display name
-     */
-    extractTeamColor(displayName) {
-        if (!displayName || typeof displayName !== 'string') return '';
-        
-        const colorMatch = displayName.match(/^(§[0-9a-frk-o])/);
-        if (colorMatch) {
-            return colorMatch[1];
-        }
-        
-        try {
-            const parsed = JSON.parse(displayName);
-            if (parsed.color) {
-                const colorMap = {
-                    'red': '§c', 'blue': '§9', 'green': '§a', 'yellow': '§e',
-                    'aqua': '§b', 'light_purple': '§d', 'gold': '§6', 'gray': '§7',
-                    'dark_red': '§4', 'dark_blue': '§1', 'dark_green': '§2',
-                    'dark_aqua': '§3', 'dark_purple': '§5', 'dark_gray': '§8'
-                };
-                return colorMap[parsed.color] || '';
-            }
-            
-            if (parsed.extra && Array.isArray(parsed.extra)) {
-                for (const extra of parsed.extra) {
-                    if (extra.color && typeof extra.color === 'string') {
-                        const colorMap = {
-                            'red': '§c', 'blue': '§9', 'green': '§a', 'yellow': '§e',
-                            'aqua': '§b', 'light_purple': '§d', 'gold': '§6', 'gray': '§7',
-                            'dark_red': '§4', 'dark_blue': '§1', 'dark_green': '§2',
-                            'dark_aqua': '§3', 'dark_purple': '§5', 'dark_gray': '§8'
-                        };
-                        return colorMap[extra.color] || '';
-                    }
-                }
-            }
-        } catch (e) {
-        }
-        
-        return '';
-    }
-    
-    registerHandlers() {
-        this.proxyAPI.on('serverPacketMonitor', ({ username, player, data, meta }) => {
-            if (!this.proxyAPI.isPluginEnabled('denicker')) return;
-            
-            switch (meta.name) {
-                case 'player_info':
-                    this.handlePlayerInfo(data);
-                    break;
-                case 'named_entity_spawn':
-                    this.handleEntitySpawn(data);
-                    break;
-            }
-        });
-        
-        this.proxyAPI.on('playerLeave', ({ username }) => {
-            this.parsedPlayers.delete(username);
-            this.noColorTicks.delete(username);
-        });
-        
-        setInterval(() => {
-            this.updateTicks();
-        }, 50);
-    }
-    
-    handlePlayerInfo(data) {
-        if (data.action !== 0) return;
-        
-        data.data.forEach(player => {
-            if (!player.name || !player.UUID) return;
-            
-            if (player.UUID.charAt(14) !== '1') return;
-            
-            if (this.parsedPlayers.has(player.name)) return;
-            
-            let displayName = player.name;
-            if (player.displayName) {
-                try {
-                    const parsed = JSON.parse(player.displayName);
-                    displayName = this.extractTextFromJSON(parsed);
-                } catch (e) {
-                    displayName = player.displayName;
-                }
-            }
-            
-            const hasColor = displayName.includes('§');
-            
-            if (!hasColor) {
-                const currentTicks = this.noColorTicks.get(player.name) || 0;
-                this.noColorTicks.set(player.name, currentTicks + 1);
-                
-                if (currentTicks < 200) return;
-            }
-            
-            if (player.properties) {
-                player.properties.forEach(prop => {
-                    if (prop.name === 'textures' && prop.value) {
-                        this.parseSkinData(player, prop.value, displayName);
-                    }
-                });
-            }
-            
-            this.parsedPlayers.add(player.name);
-            this.noColorTicks.delete(player.name);
-        });
-    }
-    
-    handleEntitySpawn(data) {
-        const uuid = data.playerUUID;
-        if (!uuid || uuid.charAt(14) !== '1') return;
-    }
-    
-    parseSkinData(player, encodedData, displayName) {
-        try {
-            const jsonStr = Buffer.from(encodedData, 'base64').toString('utf8');
-            const skinData = JSON.parse(jsonStr);
-            
-            if (!skinData.textures || !skinData.textures.SKIN || !skinData.textures.SKIN.url) {
-                return;
-            }
-            
-            const urlParts = skinData.textures.SKIN.url.split('/');
-            const hash = urlParts[4] || urlParts[urlParts.length - 1];
-            
-            const cleanDisplayName = this.cleanName(displayName);
-            
-            if (KNOWN_NICK_SKINS.has(hash) && this.config.showUnresolvedNicks) {
-                this.sendAlert(`${cleanDisplayName} §7is nicked.`);
-                return;
-            }
-            
-            const profileName = skinData.profileName || '';
-            if (!profileName) return;
-            
-            const teamColor = this.extractTeamColor(player.displayName || player.name);
-            const coloredProfileName = teamColor ? `${teamColor}${profileName}` : `§f${profileName}`;
-            
-            this.sendAlert(`${cleanDisplayName} §7is nicked as ${coloredProfileName}§7.`);
-            
-            if (this.config.debug) {
-                console.log(`[DENICKER] Parsed ${player.name}: hash=${hash}, profileName=${profileName}, teamColor=${teamColor}`);
-            }
-            
-        } catch (err) {
-            if (this.config.debug) {
-                console.error(`[DENICKER] Failed to parse skin data: ${err.message}`);
-            }
-        }
-    }
-    
-    updateTicks() {
-        for (const [name, ticks] of this.noColorTicks.entries()) {
-            this.noColorTicks.set(name, ticks + 1);
-        }
-    }
-    
-    cleanName(name) {
-        while (name.match(/§[0-9a-frk-o]$/)) {
-            name = name.substring(0, name.length - 2);
-        }
-        return name.trim();
-    }
-    
-    sendAlert(message) {
-        setTimeout(() => {
-            const fullMessage = `${this.PLUGIN_PREFIX} §r${message}`;
-            
-            const currentPlayer = this.proxyAPI.currentPlayer;
-            if (currentPlayer) {
-                this.proxyAPI.sendChatMessage(currentPlayer.client, fullMessage);
-            }
-            
-            console.log(`[DENICKER] ${message.replace(/§[0-9a-frk-o]/g, '')}`);
-        }, this.config.alertDelay);
-    }
-}
 
 module.exports = (proxyAPI) => {
     const denicker = new DenickerSystem(proxyAPI);
-    
-    proxyAPI.registerPlugin(PLUGIN_INFO);
+
+    proxyAPI.registerPlugin(PLUGIN_INFO, denicker);
 
     const buildConfigSchema = () => {
-        const defaultValues = {
-            enabled: true,
-            debug: false,
-            showUnresolvedNicks: true,
-            audioAlerts: true,
-            alertDelay: 1000
-        };
-
-        return [
-            {
-                label: 'Plugin',
-                resetAll: true,
-                defaults: { enabled: defaultValues.enabled, debug: defaultValues.debug },
-                settings: [
-                    { 
-                        type: 'toggle', 
-                        key: 'enabled',
-                        text: ['DISABLED', 'ENABLED'],
-                        description: 'Globally enables or disables the Denicker plugin.'
-                    },
-                    {
-                        type: 'toggle',
-                        key: 'debug',
-                        displayLabel: 'Debug',
-                        description: 'Toggles verbose logging for the Denicker system.'
-                    }
-                ]
-            },
-            {
-                label: 'Show Unresolved Nicks',
-                defaults: { showUnresolvedNicks: defaultValues.showUnresolvedNicks },
-                settings: [{
-                    type: 'toggle',
-                    key: 'showUnresolvedNicks',
-                    text: ['OFF', 'ON'],
-                    description: 'If enabled, shows an alert for players who are likely nicked but could not be resolved to a real name.'
-                }]
-            },
-            {
-                label: 'Audio Alerts',
-                defaults: { audioAlerts: defaultValues.audioAlerts },
-                settings: [{
-                    type: 'soundToggle',
-                    key: 'audioAlerts',
-                    description: 'Plays a sound when an alert is triggered.'
-                }]
-            },
-            {
-                label: 'Alert Delay',
-                defaults: { alertDelay: defaultValues.alertDelay },
-                settings: [
-                     {
-                        type: 'cycle',
-                        key: 'alertDelay',
-                        description: 'The delay in milliseconds before sending a denick alert.',
-                        values: [
-                            { text: ['(', '0ms', ')'], value: 0 },
-                            { text: ['(', '500ms', ')'], value: 500 },
-                            { text: ['(', '1000ms', ')'], value: 1000 },
-                            { text: ['(', '2000ms', ')'], value: 2000 }
-                        ]
-                    }
-                ]
-            }
-        ];
+        return schema;
     };
     
     proxyAPI.registerCommands('denicker', (registry) => {
@@ -314,6 +28,252 @@ module.exports = (proxyAPI) => {
     
     return PLUGIN_INFO;
 };
+
+const schema = [
+    {
+        label: 'Show Unresolved Nicks',
+        defaults: { showUnresolvedNicks: false },
+        settings: [{
+            type: 'toggle',
+            key: 'showUnresolvedNicks',
+            text: ['OFF', 'ON'],
+            description: 'If enabled, shows an alert for players who are likely nicked but could not be resolved to a real name.'
+        }]
+    },
+    {
+        label: 'Audio Alerts',
+        defaults: { audioAlerts: true },
+        settings: [{
+            type: 'soundToggle',
+            key: 'audioAlerts',
+            description: 'Plays a sound when an alert is triggered.'
+        }]
+    },
+    {
+        label: 'Alert Delay',
+        defaults: { alertDelay: 1000 },
+        settings: [
+             {
+                type: 'cycle',
+                key: 'alertDelay',
+                description: 'The delay in milliseconds before sending a denick alert.',
+                values: [
+                    { text: ['(', '0ms', ')'], value: 0 },
+                    { text: ['(', '500ms', ')'], value: 500 },
+                    { text: ['(', '1000ms', ')'], value: 1000 },
+                    { text: ['(', '2000ms', ')'], value: 2000 }
+                ]
+            }
+        ]
+    }
+];
+
+
+class DenickerSystem {
+    constructor(proxyAPI) {
+        this.proxyAPI = proxyAPI;
+        this.PLUGIN_PREFIX = `§8[${this.proxyAPI.proxyPrefix}§8${PLUGIN_INFO.suffix}§8]§r`;
+        this.LOG_PREFIX = `[${PLUGIN_INFO.displayName}]`;
+        this.DEBUG_PREFIX = `[${PLUGIN_INFO.displayName}-Debug]`;
+
+        this.config = {
+            showUnresolvedNicks: true,
+            audioAlerts: true,
+            alertDelay: 1000,
+        };
+
+        this.parsedPlayers = new Set();
+        this.userPosition = null;
+
+        this.nickData = new Map();
+        this.teamData = new Map();
+        this.playerTeams = new Map();
+
+        this.registerHandlers();
+    }
+
+    reset() {
+        this.userPosition = null;
+        this.nickData.clear();
+        this.teamData.clear();
+        this.playerTeams.clear();
+    }
+
+    registerHandlers() {
+        this.proxyAPI.on('serverPacketMonitor', ({ data, meta }) => {
+            if (!this.proxyAPI.isPluginEnabled('denicker')) return;
+
+            if (meta.name === 'player_info') {
+                if (data.action === 0) {
+                    for (const player of data.data) {
+                        if (player.UUID.charAt(14) !== '1') continue;
+                        if (player.properties) {
+                            this.detectNick(player);
+                        }
+                    }
+                }
+
+            } else if (meta.name === 'scoreboard_team') {
+                this.handleScoreboardTeam(data);
+            } else if (meta.name === 'respawn') {
+                this.reset();
+            }
+        });
+
+        this.proxyAPI.on('clientPacketMonitor', ({ data, meta }) => {
+            if (meta.name === 'position' || meta.name === 'position_look') {
+                this.userPosition = { x: data.x, y: data.y, z: data.z };
+            }
+        });
+
+        this.proxyAPI.on('playerJoin', () => this.reset());
+        this.proxyAPI.on('playerLeave', () => this.reset());
+    }
+
+    handleScoreboardTeam(data) {
+        const { mode, team: teamName, players } = data;
+
+        if (mode === 0 || mode === 2) {
+            this.teamData.set(teamName, {
+                prefix: data.prefix || '',
+                suffix: data.suffix || ''
+            });
+            for (const [playerName, pTeamName] of this.playerTeams) {
+                if (pTeamName === teamName) {
+                    this.triggerUpdateForPlayer(playerName);
+                }
+            }
+        }
+        
+        if (mode === 3 && players) {
+            for (const playerName of players) {
+                const cleanName = playerName.replace(/§./g, '');
+                this.playerTeams.set(cleanName, teamName);
+                this.triggerUpdateForPlayer(cleanName);
+            }
+        }
+
+        if (mode === 4 && players) {
+            for (const playerName of players) {
+                const cleanName = playerName.replace(/§./g, '');
+                this.playerTeams.delete(cleanName);
+                this.triggerUpdateForPlayer(cleanName);
+            }
+        }
+
+        if (mode === 1) {
+            this.teamData.delete(teamName);
+             for (const [playerName, pTeamName] of this.playerTeams) {
+                if (pTeamName === teamName) {
+                    this.playerTeams.delete(playerName);
+                    this.triggerUpdateForPlayer(playerName);
+                }
+            }
+        }
+    }
+
+    triggerUpdateForPlayer(cleanName) { 
+        for (const [uuid, nickInfo] of this.nickData) {
+            if (nickInfo.name === cleanName) {
+                this.tryUpdateNickTab(uuid);
+                return;
+            }
+        }
+    }
+
+    detectNick(player) {
+        if (this.nickData.has(player.UUID)) return;
+
+        const textureProp = player.properties.find(p => p.name === 'textures');
+        if (!textureProp?.value) return;
+
+        try {
+            const skinData = JSON.parse(Buffer.from(textureProp.value, 'base64').toString('utf8'));
+            const url = skinData.textures?.SKIN?.url;
+            if (!url) return;
+
+            const hash = url.split('/').pop();
+
+            if (KNOWN_NICK_SKINS.has(hash)) {
+                if (this.config.showUnresolvedNicks) {
+                    this.proxyAPI.debugLog(`Detected unresolved nick: ${player.name}`);
+                    this.sendAlert(player.name, null);
+                    this.storeNickInfo(player, null);
+                }
+                return;
+            }
+
+            const realName = skinData.profileName;
+            if (realName && realName !== player.name.replace(/§.$/, '')) {
+                this.proxyAPI.debugLog(`Resolved nick: ${player.name} -> ${realName}`);
+                this.sendAlert(player.name, realName);
+                this.storeNickInfo(player, realName);
+            }
+        } catch (e) {
+            this.proxyAPI.log(`Skin parse error for ${player.name}:`, e.message);
+        }
+    }
+
+    storeNickInfo(player, realName) {
+        const cleanName = player.name.replace(/§./g, '');
+        
+        this.nickData.set(player.UUID, { 
+            name: cleanName,
+            realName 
+        });
+
+        this.tryUpdateNickTab(player.UUID);
+    }
+
+    tryUpdateNickTab(uuid) {
+        const nickInfo = this.nickData.get(uuid);
+        if (!nickInfo) return;
+
+        const teamName = this.playerTeams.get(nickInfo.name);
+        const teamInfo = teamName ? this.teamData.get(teamName) : null;
+
+        if (teamName && !teamInfo) {
+            return;
+        }
+
+        const prefix = teamInfo ? teamInfo.prefix : '';
+        const suffix = teamInfo ? teamInfo.suffix : '';
+        const realName = nickInfo.realName;
+
+        const nickSuffix = realName ? ` §7(${realName})` : ` §c[NICK]`;
+        const fullDisplayName = prefix + nickInfo.name + nickSuffix + suffix;
+        const displayNameJson = JSON.stringify({ text: fullDisplayName });
+
+        setTimeout(() => {
+        this.proxyAPI.sendToClient('player_info', {
+            action: 3,
+            data: [{ UUID: uuid, displayName: displayNameJson }]
+        });
+        }, 5);
+    }
+
+    sendAlert(playerName, realName) {
+        setTimeout(() => {
+            const cleanPlayerName = playerName.replace(/§./g, '');
+            const alertMsg = realName
+                ? `§c${realName}§7 is nicked as §c${cleanPlayerName}§7.`
+                : `§c${cleanPlayerName}§7 is nicked.`;
+            this.proxyAPI.sendChatMessage(this.proxyAPI.currentPlayer.client, `${this.PLUGIN_PREFIX} ${alertMsg}`);
+
+            if (this.config.audioAlerts && this.userPosition) {
+                this.proxyAPI.sendToClient('named_sound_effect', {
+                    soundName: 'note.pling',
+                    x: this.userPosition.x * 8,
+                    y: this.userPosition.y * 8,
+                    z: this.userPosition.z * 8,
+                    volume: 1.0,
+                    pitch: 63
+                });
+            }
+        }, this.config.alertDelay);
+    }
+}
+
 
 const KNOWN_NICK_SKINS = new Set([
     "4c7b0468044bfecacc43d00a3a69335a834b73937688292c20d3988cae58248d",
@@ -432,115 +392,5 @@ const KNOWN_NICK_SKINS = new Set([
     "997eb6a7b37bc8924ed341a4a0a356112b620bbc121b5ce27e692a535d2df81",
     "adc9c2fd56f6698f5807012e4dd2e785e5efe1e6799b47cd1c3bdb1c05eda3c",
     "2d13cdd15b5673a27a63c04226e3b2b3639ac27fb853d1a146a239496da1ff",
-    "238580ddf446509b4c84e829b39a8b2f72ab8cd649dca6886405dd2ad2dcd5",
-    "241c4fdecb52afd81b24993b5a7e6c715f375d94f4eafab39a60bb2b5050e9",
-    "d2447fe1ee25c2476525e78aa71bd2f56bdec3b5f829215650642563698d272",
-    "f515cc3ace7a74afe76e41c117dace9f278b63c1829d30b246bd7d73584cf2",
-    "9691b4eada776b725eb2a5fdda77af65b87ccfde6ccb76c75fbe4da347723",
-    "344f6ae0fa81aadf8a2197e656cb8e696d18f12e2a87ab42c41b64b61c688",
-    "6b76f913d7c02718c7cf9a8087db3dc246d9eb89febefd28abfd59226559548",
-    "eed8565e62768584c3a933227e1747165dd86e3942a93f52e4285ba65cd2662",
-    "8fee25beac53be9a196b5319e9887eaff50cb19a61ad5d88bb57fe431c8a8",
-    "e32379103e70b548a716a1c8d477b611c44c6d1925e978f1164362f22564b9",
-    "c8424766a87919285dd9f92e4c8868de558d87c739d76668b532f7c21a490",
-    "ad369862824c34b9354edc9cb14832364dc74cf867863210c1a83dc3ebcd22c3",
-    "a17d731aef41184853bafa292fa9f46c6c56912cdd1bb4cd43e53c88ba82cc6",
-    "ff642bf35a3e622515bb1f20356534fc3f24316b3eb170f477f336ec26edf9d6",
-    "dd222e15fa6d522d9bc3a674d1a9327bbee733b396246e40af1fce716bef9b",
-    "7fd6bf7bc58c661dbef8b8896eb2ccd31229a3e8b09e54d769c1e46242348277",
-    "4e5223efd125cba238eea12334f9e856718842281d7f865db3c6d577ed5e084",
-    "689026f3bf84461b773a3e7915da121dde4a3371598a8431cd5e8951ea549",
-    "80c86c1d62b71928d6251ef238434e226fa9fe3041964625d8a0e550d8f528",
-    "d275c5282d3ce248ecec75b82a44c2e70497c76565c993618316ca12a1efb8a",
-    "4c232f62387b2ac54c371beaaa0577fe7778a3c6954b34914c3e016b84f6f46",
-    "2ecf8d5923446aba9eeef5a24848b84b20bbc37c80ca62e9e664375c24dc7077",
-    "d5fab8a6fc9ec343f7ccecd86a0f5cc339d11a02c8fb0ba1ed5cb446d01ae0",
-    "ddeb44d8f85ee1b918dcd231eb62887e2e2df63df8c91d11461111f710c9f2ac",
-    "c25c40b36da47d6a982c86a319d6fe5e4916df411fbbf656451bd6049d6d179",
-    "5fe8b3813cf0c55cdf2c97789735d62085767323cd9af8da804669592ac45f",
-    "7cbe75103d02c10dd410fc5760139212fbeda8d91ee752e53e4674aecfa30",
-    "35873a599e65596b99080d86f5b5ecfe162a8235a136bb4990fb8e2325965b",
-    "f813e90a33dce8bca6a6c688683706498e1f2aaec8530c481c2a80faa82ddebc",
-    "99a5daa3fe44c414ca8f4324c36bced2afe6d962a580842d8a36c5d9c1b8be0",
-    "672d94becd9f61dec864a8232692fb1c54ff4676ade457ae6847f7d9d954a8d",
-    "b0a74cd03493521b451cbf256775e93809a203672e837e0eb46c590e5f0928f",
-    "f3a01fd5a6267170ff7c6526d3a9ee4ee4403e036955f902c9414c064d9449be",
-    "bfd4e3b0527bd94824e530968f2281ce8e3dd9a3f6b73fb23e6cc15b7c79d2c",
-    "4fda29ceab6ca457da30882493c5129287277895ebd3f244456126666a6",
-    "79b7861ac71a511be1b88823549fbbbbc8a300dccc0e873322ea2a7859d686cc",
-    "3debc1619533fe5f011783e43e526efad44bf49ace9e5ca10badd7f55e069",
-    "dbc1c832b4919315df977aedc7ece84d9aabef8823cc9de5ceee5129b1728",
-    "7a27c712e9446026aa38afd114d76cef0b96bdbfe58adbf73a9a9149684eac3",
-    "b78e4089143163c32291d6365e715e1b42806a40784ff93b8737947c7687e9",
-    "3a3d66c09223d0899b896487505fda388584941ec946534d2a9e277133fe02e",
-    "1ae5861b10c43426dc4345aa49585d818886a1fa4599c8ada0b2fcbf69b81",
-    "a7924326aca6415f34b017573996f333ad1c8db9bf46d4fa216493faafbc9fd",
-    "62cc348490c1d2bf32daed40eae64bf812c3ba23abda3653a1335af6f2123b",
-    "c9b2b946ab9aebc76084157641aceed34e83185d958fc2f225c2595c8171d6",
-    "81895e92fc1552fe1dcd531f6775e1266146b75812c58795a1b0a3bef922b79f",
-    "8569245371edff63a26913a972f2c44fbe41f75e42668a72599759cf452f3a",
-    "2470257f2b1ea354f4a1c5e0e1ee207d162f669a83e440a913cd87f58f52ffd9",
-    "1670d1f3de92402e51e780b2e6699dabbc79fb44dca1c273f5cbde64258aa",
-    "dc3938ebca030fe937c77b9876d456e19e9b6588f3ee8ec993bace98ccae4e",
-    "1ad471136cdf5e9dec7b30c841f2b9af1aab09b9f369fa24aa52a98f4b0afe1",
-    "c828ea469bef8c84eee8e9abf66788c7991789d8f3a21ab460789a0b14884",
-    "16c63d6591c8e7e3a1b8825e43bb8dc8ac561ab567a9cda57cf783031e0",
-    "62604b8b7df3da89a0a85ed8152073da59f31774cdcfec66951edd572a72957",
-    "4b28dc744eb31957b74a14bcfc2320b451f5b6859a158fd8bab28dd873f71b",
-    "3d4a203011d23899e4f02065324b4c9e97228f2ab2cef1eb366c8edbaad26d",
-    "b6ed84678adf2445348963fc343a6f44e8631a1d7fd25f377d824e9bde37e",
-    "34f889c53b26a7b68569a51be9a5d17d3fca371df6dc615183e2b437530",
-    "b7d33aa3cf94603b6bbaccdda885c33bdba3baf6f866b9c1dc64816cf47e7fa",
-    "bd2730d152b782f5e6f26e5d22f49d3da81ada8cb193fecd37189a72b9a7c",
-    "49e3bd98686d1146b9337c9652899a12f28fe59e42f123578e8981652510e5",
-    "4c4d84cc6798da26511812353857e7630544ecbb93a7d9a5a44e0a8bddf3",
-    "de915d709d818429c09838c6341ce6c4abf41e450def2dbb4c12adee5745fb",
-    "f1d8494d382feb5e7434daa2fe553b4d6b51269717cd12309d331399efdbbd49",
-    "c41043fb371ce1d6bc2b5e3c38c116177a71aba9c2e9511188f9e15955131",
-    "a5e77eca3a8571b6ea72a2d1d41429323c610d35477191d5191faa9745d772",
-    "f42d8249035be11d50ef8c2a947d1ffe3eb8d91989de5b27748190eb231295",
-    "2e24edaf3df936127c1be1097bc798411719489a1652139ebd6f8dd21fda71b",
-    "14ea486fef4c37c771f23968df9d47358111d3cac57c458c57b6a2c7dc9970",
-    "7dc27a418be63cd1ece8d2daf106c5b369db846c6c141d2bde4d81c83eff",
-    "f911f9329b391d8b6e30d55ab9f20608d620d682c9327514b5ab9d1b7ed360d3",
-    "c0554e6189ce7ba79de273dcac358f2985771d3e3cec7ff8b4c953bf6d5c5",
-    "f60648e541171fb69121794cc8894c3168ba841c897cbb457819172d9df3",
-    "7c5aeae0e15227404b1f1c59c93e9ffce83c7433feb5649ecc2ddc1af6e2c7",
-    "9960335e7981e3c82b03a59bce8aad04b893efc9928e825498199d59627079",
-    "579a5713ed8affbfe8bbcd432def758ec4a31647db4f7dda4df7535a3fa0f58f",
-    "7fb832fa27791731e34a1adaf6f59c1a95e6e5aa46d528f6c2975d668bc1",
-    "cae2c0eb1730e11888e3f4dc133e9c5fd1434beb19b1616b026412fafc8e87",
-    "7ca423e35c767d5844f8bb9a3c949710e8615847e3f6db117591ce53c30f9e1",
-    "cf9de3c33c4b523248fc7dc23f18c551f1d2740cfeb162674aad031852e",
-    "f4254838c33ea227ffca223dddaabfe0b0215f70da649e944477f44370ca6952",
-    "fd41e45153cb159af3d2b3d0e4210969fc4a6402a327c5ab6d1f6981ceae7929",
-    "6437c4b8eba97a3f79a49074d8c9c6c7ededabffe2896161256d426014f52dfc",
-    "8b1ce430410e2416c1c0ae1ad2b91621e128b9c8a46e32dfee9a6e777eab6cf8",
-    "1e1408a4152663ccd1169965eabd5815216913bf9f9374d499ed3160a562cef9",
-    "e814f4ac1be28dd2ee5d6d297265d2efac52c36035a60bd919961914ea226ef",
-    "8958ea6b50dbb139ec56c20fa3d61d4902c30d4ee234d8009180bd9c37f33708",
-    "a7556d263c98a1d3b12236b56f613c516d91c755d4d7555eff0788da9c134f2f",
-    "6e0b2d4281ad9a090037ef0985fc0667e43c4762c083d34daaa6cd05d5e53055",
-    "7ae4fce4ecdfcf9e27e8723061fe43236ec937004cd0e016c7fd924587a34c5d",
-    "adcebc4e9a583d84ee7083b5540b8de8499f9ed4e02619213219c2c6eb081821",
-    "c6e4f799a1019320407a035ee54350b3a507523c7d5625f13b372a7b215402c9",
-    "23c7a66adf72ebe7338b23a34e5bf02827433c805e8b63c2a19ed9617df26b2f",
-    "81280cc515d765b001c9f628a4f488b1a910effd38bc24e0b5aa64252e68068",
-    "2dc567c2c3ee555d22944a5d9238c3d27915f5076f5ced1687471afd0dc605d4",
-    "fb44f9b19f45f1356f9c5c85ff2137018068e50c84ff0b2ae7d9ce0f33629d34",
-    "52b273741996ce877d63a8651e94ba3c55fee196c34fd52b78c0aa06c5fd550",
-    "48cc9961ec54f340f0d35239562d92748e92c6e2d6aa7aac884c414ae949618e",
-    "a8485f852d273ab6223517c0d84c4c13f704ea5e40a7431c5012bb2e86250445",
-    "8fba7e9fa894246022930de1320368d013544d6953f192c62561c1423bb44dd5",
-    "3ef953f0f2d9bdc2d2156952d7aae3fb438216a47108cbf0a0348f26e018049b",
-    "2ab3f698e25c02439c7b2dbd7b6648e2ecb3ddcc34e638ed4d116b0b409aeb25",
-    "2585c58e856754f3d7e36f427caa95aab8ff19781a1ba645acb428e86452b5a0",
-    "99e3b82da73910648899e454691e68f8d15f276dc9aab1435feff8a047948a40",
-    "75867d2c0a93cc99e05a86d55637e7f47fef7c9f98a9e5158dc36dd1b414bd90",
-    "b283088987c25b6153bbc1261864bc1764985dc4dd94bd5ebe040f598f7c4d59",
-    "5b71b9a4ff7292f7c4955407a97acc93d2784620a53367117713bfa07d0909c2",
-    "b1732d69af0612111e8f15ccc105013fe2ce08c4c65b65833b6456e4f01238ef",
-    "519d503b6cd7565119361cf6b51ef8d294a951b4b512d2727f28b5cc9d784626",
-    "d2da19710b8a4171ac9b17984dd95d042d92742d72a74ba40450d7494a24321",
-    "1d9e8dafe7d87bb7cba7eb3d8d2d5bf58eab72ecdfdf9ecce3d1c03871c0"
+    "238580ddf446509b4c84e829b39a8b2f72ab8cd649dca6886405dd2ad2dcd5"
 ]);
