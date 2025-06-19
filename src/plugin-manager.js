@@ -103,7 +103,7 @@ class PluginManager {
         const displayName = pluginData?.info.displayName || pluginName;
 
         return {
-            label: 'Plugin Controls',
+            label: `${displayName} Plugin`,
             resetAll: true,
             defaults: { enabled: true, debug: false },
             settings: [

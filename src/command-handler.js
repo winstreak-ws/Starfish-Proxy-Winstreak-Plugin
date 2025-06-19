@@ -331,20 +331,25 @@ class CommandHandler {
             const startIndex = (page - 1) * pageSize;
             const pageCommands = commands.slice(startIndex, startIndex + pageSize);
             
-            chat.text('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', THEME.muted).newline();
-            chat.text(`${displayName} Commands `, THEME.primary).text(`(Page ${page}/${totalPages})`, THEME.text).newline();
-            chat.text('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', THEME.muted).newline().newline();
+            chat.text(`------ ${THEME.primary}${displayName} Commands${THEME.muted} ------`, THEME.muted);
+            if (totalPages > 1) {
+                chat.text(` (Page ${page}/${totalPages})`, THEME.muted);
+            }
+            chat.newline();
             
             pageCommands.forEach((cmd, index) => {
                 let usage = `/${moduleName} ${cmd.name()}`;
+                let argsText = '';
                 if (cmd._metadata) {
                     cmd._metadata.arguments.forEach(arg => {
                         usage += ` ${arg.usage}`;
+                        if (argsText) argsText += ' ';
+                        argsText += arg.usage;
                     });
                 }
                 
                 let hoverText = `${THEME.accent}/${moduleName} ${cmd.name()}\n`;
-                hoverText += `${THEME.muted}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+                hoverText += `${THEME.muted}--------------------------\n`;
                 hoverText += `${THEME.info}${cmd.description() || 'No description available.'}\n\n`;
                 hoverText += `${THEME.secondary}Usage: ${THEME.text}${usage}\n`;
                 
@@ -367,47 +372,41 @@ class CommandHandler {
                 
                 hoverText += `\n${THEME.text}Click to paste command`;
 
-                chat.suggestButton(usage, usage, hoverText, THEME.secondary);
+                if (argsText) {
+                    chat.suggestButton(`/${moduleName} ${cmd.name()}`, usage, hoverText, THEME.secondary);
+                    chat.space().text(argsText, THEME.text);
+                } else {
+                    chat.suggestButton(`/${moduleName} ${cmd.name()}`, usage, hoverText, THEME.secondary);
+                }
                 chat.newline();
             });
 
-            chat.newline();
             if (totalPages > 1) {
-                chat.text('Pages: ', THEME.secondary);
-                
+                chat.text('         ', THEME.muted);
                 if (page > 1) {
                     chat.runButton('[<<<]', `/${moduleName} help --page ${page - 1}`, `Go to page ${page - 1}`, THEME.text);
-                    chat.text(' ', THEME.text);
                 } else {
-                    chat.text('[<<<] ', THEME.muted);
+                    chat.text('[<<<]', THEME.muted);
                 }
+                chat.space();
                 
-                const startPage = Math.max(1, page - 2);
-                const endPage = Math.min(totalPages, page + 2);
-                
-                for (let i = startPage; i <= endPage; i++) {
+                for (let i = 1; i <= totalPages; i++) {
                     if (i === page) {
                         chat.text(`[${i}]`, THEME.primary);
                     } else {
                         chat.runButton(`${i}`, `/${moduleName} help --page ${i}`, `Go to page ${i}`, THEME.text);
                     }
-                    if (i < endPage) chat.text(' ', THEME.text);
+                    chat.space();
                 }
-                
-                chat.text(' ', THEME.text);
                 
                 if (page < totalPages) {
                     chat.runButton('[>>>]', `/${moduleName} help --page ${page + 1}`, `Go to page ${page + 1}`, THEME.text);
-                    chat.text(' ', THEME.text);
                 } else {
                     chat.text('[>>>]', THEME.muted);
                 }
-                
                 chat.newline();
             }
-
-            chat.newline()
-                .text('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', THEME.muted);
+            chat.text('-----------------------------------', THEME.muted);
         }
 
         chat.send();
@@ -433,7 +432,16 @@ class CommandHandler {
                 
                 const baseSchema = schemaBuilder();
                 const standardSettings = this.proxyManager.pluginManager.getStandardPluginSettings(moduleName);
-                const schema = [standardSettings, ...baseSchema];
+                
+                const enhancedBaseSchema = baseSchema.map(item => {
+                    const { resetAll, ...itemWithoutResetAll } = item;
+                    return {
+                        ...itemWithoutResetAll,
+                        isEnabled: item.isEnabled || ((config) => config.enabled)
+                    };
+                });
+                
+                const schema = [standardSettings, ...enhancedBaseSchema];
                 
                 const ctx = {
                     client: this._currentClient,
@@ -455,7 +463,7 @@ class CommandHandler {
                 if (resetAllExecute) {
                     schema.forEach(item => {
                         if (!item.defaults) return;
-                        if (item.label === 'Plugin Controls') return;
+                        if (item.resetAll) return;
                         
                         for (const key in item.defaults) {
                             const setting = item.settings.find(s => s.key.endsWith(key));
@@ -513,7 +521,16 @@ class CommandHandler {
 
                     const refreshedBaseSchema = schemaBuilder();
                     const refreshedStandardSettings = this.proxyManager.pluginManager.getStandardPluginSettings(moduleName);
-                    const refreshedSchema = [refreshedStandardSettings, ...refreshedBaseSchema];
+                    
+                    const refreshedEnhancedBaseSchema = refreshedBaseSchema.map(item => {
+                        const { resetAll, ...itemWithoutResetAll } = item;
+                        return {
+                            ...itemWithoutResetAll,
+                            isEnabled: item.isEnabled || ((config) => config.enabled)
+                        };
+                    });
+                    
+                    const refreshedSchema = [refreshedStandardSettings, ...refreshedEnhancedBaseSchema];
                     
                     this._createConfig({
                         client: this._currentClient,
@@ -566,11 +583,19 @@ class CommandHandler {
             const labelColor = isLineEnabled ? THEME.secondary : THEME.muted;
             const mainColor = isLineEnabled ? THEME.text : THEME.muted;
             
-            let hoverText = `${THEME.primary}${item.label}\n`;
+            let hoverText = `${THEME.accent}${item.label}\n`;
             hoverText += `${THEME.muted}--------------------------\n`;
+            
+            const hasDescription = item.settings.some(setting => setting.description);
+            if (hasDescription) {
+                const mainSetting = item.settings.find(setting => setting.description);
+                if (mainSetting) {
+                    hoverText += `${THEME.info}${mainSetting.description}\n\n`;
+                }
+            }
 
             if (item.defaults) {
-                hoverText += `\n${THEME.secondary}Default Settings:\n`;
+                hoverText += `${THEME.secondary}Settings:\n`;
                 item.settings.forEach(setting => {
                     const settingKeyParts = setting.key.split('.');
                     const settingName = settingKeyParts[settingKeyParts.length - 1];
@@ -588,12 +613,14 @@ class CommandHandler {
                              const defaultDisplay = setting.values.find(v => v.value === defaultValue);
                              if (defaultDisplay) displayValue = defaultDisplay.text;
                          }
-                         hoverText += `${THEME.muted}• ${THEME.accent}${settingName}: ${THEME.text}${displayValue}\n`;
+                         hoverText += `${THEME.muted}• ${THEME.primary}${settingName} ${THEME.muted}- ${THEME.text}${displayValue}`;
                          if (setting.description) {
-                            hoverText += `  ${THEME.info}${setting.description}\n`;
+                            hoverText += `\n  ${THEME.text}${setting.description}`;
                          }
+                         hoverText += '\n';
                     }
                 });
+                hoverText += `\n${THEME.text}Click to modify settings`;
             }
             
             let lineLabel = new ChatBuilder(this, client).text(item.label, labelColor).hover(hoverText);

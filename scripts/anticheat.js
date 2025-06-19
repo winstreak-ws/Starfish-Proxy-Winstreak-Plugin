@@ -44,54 +44,54 @@ const generateSchema = () => {
     
     for (const checkName in checkDefinitions) {
         const defaultCheckConfig = checkDefinitions[checkName];
-        
-        schema.push({
-            label: checkName,
-            defaults: defaultCheckConfig,
-            settings: [
-                {
-                    type: 'toggle',
-                    key: `checks.${checkName}.enabled`,
-                    text: ['OFF', 'ON'],
+            
+            schema.push({
+                label: checkName,
+                defaults: defaultCheckConfig,
+                settings: [
+                    {
+                        type: 'toggle',
+                        key: `checks.${checkName}.enabled`,
+                        text: ['OFF', 'ON'],
                     description: defaultCheckConfig.description || `Enables or disables the ${checkName} check.`
-                },
-                {
-                    type: 'soundToggle',
-                    key: `checks.${checkName}.sound`,
-                    condition: (cfg) => cfg.checks[checkName].enabled,
-                    description: 'Toggles sound alerts for this check.'
-                },
-                {
-                    type: 'cycle',
-                    key: `checks.${checkName}.vl`,
-                    values: [
-                        { text: ['(VL: ', '5', ')'], value: 5 },
-                        { text: ['(VL: ', '10', ')'], value: 10 },
-                        { text: ['(VL: ', '15', ')'], value: 15 },
-                        { text: ['(VL: ', '20', ')'], value: 20 },
-                        { text: ['(VL: ', '30', ')'], value: 30 }
-                    ],
-                    condition: (cfg) => cfg.checks[checkName].enabled,
-                    description: 'Sets the violation level to trigger an alert.'
-                },
-                {
-                    type: 'cycle',
-                    key: `checks.${checkName}.cooldown`,
-                    values: [
-                        { text: ['(CD: ', '0s', ')'], value: 0 },
-                        { text: ['(CD: ', '1s', ')'], value: 1000 },
-                        { text: ['(CD: ', '2s', ')'], value: 2000 },
-                        { text: ['(CD: ', '3s', ')'], value: 3000 }
-                    ],
-                    condition: (cfg) => cfg.checks[checkName].enabled,
-                    description: 'Sets the cooldown between alerts for this check.'
-                }
-            ]
-        });
-    }
+                    },
+                    {
+                        type: 'soundToggle',
+                        key: `checks.${checkName}.sound`,
+                        condition: (cfg) => cfg.checks[checkName].enabled,
+                        description: 'Toggles sound alerts for this check.'
+                    },
+                    {
+                        type: 'cycle',
+                        key: `checks.${checkName}.vl`,
+                        values: [
+                            { text: ['(VL: ', '5', ')'], value: 5 },
+                            { text: ['(VL: ', '10', ')'], value: 10 },
+                            { text: ['(VL: ', '15', ')'], value: 15 },
+                            { text: ['(VL: ', '20', ')'], value: 20 },
+                            { text: ['(VL: ', '30', ')'], value: 30 }
+                        ],
+                        condition: (cfg) => cfg.checks[checkName].enabled,
+                        description: 'Sets the violation level to trigger an alert.'
+                    },
+                    {
+                        type: 'cycle',
+                        key: `checks.${checkName}.cooldown`,
+                        values: [
+                            { text: ['(CD: ', '0s', ')'], value: 0 },
+                            { text: ['(CD: ', '1s', ')'], value: 1000 },
+                            { text: ['(CD: ', '2s', ')'], value: 2000 },
+                            { text: ['(CD: ', '3s', ')'], value: 3000 }
+                        ],
+                        condition: (cfg) => cfg.checks[checkName].enabled,
+                        description: 'Sets the cooldown between alerts for this check.'
+                    }
+                ]
+            });
+        }
     
-    return schema;
-};
+        return schema;
+    };
 
 // anticheat check definitions with their default configurations
 const CHECKS = {
@@ -703,7 +703,7 @@ class AnticheatSystem {
             this.reset();
         });
     }
-
+    
     extractTextFromJSON(jsonText) {
         if (typeof jsonText === 'string') {
             return jsonText;
