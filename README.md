@@ -4,17 +4,35 @@ A personal Minecraft proxy server with Microsoft authentication, dynamic server 
 
 ## TODO
 
-#### Minor
-- Version system for plugins(?)
-- Dependency system for plugins(?)
-- Improve anticheat checks
-- Move utilities for packet manipulation (tab/scoreboard, display names, etc) into base proxy
+**Things to be finished before release- DM me (@hexze) if you'd like to cross something off the list, and make a pull request**
 
-#### Major
-- Urchin integration plugin (auto-blacklisting, blacklisted player alerts)
-- Hypixel utils plugin (auto /who, client tags in tab, session tracking)
-- Support for official obfuscated plugins(?)
-- Finish plugin system and provide documentation/example plugin
+### Proxy
+- Full plugin API for the easiest possible plugin development
+   - Dependency system, allow certain features to be used only if certain plugins are installed
+   - Versioning
+   - Obfuscated plugins..?
+- Exitlag compat(?)
+
+### Plugins
+
+#### Anticheat
+**Chat alerts for blatant cheaters**
+- Fix ScaffoldB and ScaffoldC checks falsing very often
+- Improve checks in general
+- /wdr command in chat for players who flag past a certain threshold
+
+#### Urchin
+**Integration with Urchin API, including automatic blacklisting, client tags and cheater gtags displayed next to player names, and more**
+- Haven't started
+
+#### Denicker
+**Chat/tab indicators for nicks (resolves nicks when the player uses their player skin)**
+- Fix script trying to resolve nicks with preset skins
+- Make sure tab indicator is not overwritten by Hypixel
+
+#### BW-Stats
+**Chat/tab stats for players at the start of your bedwars game**
+- Haven't started
 
 ## Features
 
