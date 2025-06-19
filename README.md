@@ -14,6 +14,7 @@ A personal Minecraft proxy server with Microsoft authentication, dynamic server 
 - Urchin integration plugin (auto-blacklisting, blacklisted player alerts)
 - Hypixel utils plugin (auto /who, client tags in tab, session tracking)
 - Support for official obfuscated plugins(?)
+- Finish plugin system and provide documentation/example plugin
 
 ## Features
 
