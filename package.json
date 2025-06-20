@@ -1,12 +1,10 @@
 {
-  "name": "minecraft-proxy",
-  "version": "1.0.0",
+  "name": "starfish-proxy",
+  "version": "0.0.4c",
   "description": "A Minecraft proxy with authentication and plugin support",
   "main": "proxy.js",
   "scripts": {
-    "start": "node start.js",
-    "proxy": "node proxy.js",
-    "config": "node proxy-config.js",
+    "start": "node proxy.js",
     "build": "node build.js"
   },
   "dependencies": {
