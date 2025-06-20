@@ -30,7 +30,6 @@ const THEME = {
     info: '§9',      // Blue - Information, descriptions
     special: '§5',   // Purple - Headers, special elements
     muted: '§8',     // Dark Gray - Less important text, separators
-    strikethrough: '§m', // Strikethrough effect
     text: '§7',      // Gray - Regular text content
     none: '§f'     // White - Default
 };
@@ -819,4 +818,4 @@ class CommandHandler {
     }
 }
 
-module.exports = CommandHandler;
+module.exports = CommandHandler; 

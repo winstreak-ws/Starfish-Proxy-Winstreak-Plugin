@@ -7,11 +7,9 @@ const mc = require('minecraft-protocol');
 const path = require('path');
 const fs =require('fs');
 
-const AuthManager = require('./auth');
-const CommandHandler = require('./command-handler');
-const PluginManager = require('./plugin-manager');
-const GameState = require('./game-state');
-const { PluginAPI, PROXY_NAME } = require('./plugin-api');
+const { PlayerSession } = require('./session');
+const CommandHandler = require('./command-system');
+const { PluginManager, PluginAPI, PROXY_NAME } = require('./plugin-system');
 
 const PROXY_VERSION = '1.8.9';
 
@@ -58,31 +56,18 @@ function loadConfig() {
 }
 
 
-/**
- * Plugin API for the Minecraft proxy
- * 
- * Event System:
- * - 'clientPacketMonitor' / 'serverPacketMonitor': Passive monitoring (zero latency impact)
- * - 'clientPacketIntercept' / 'serverPacketIntercept': Can cancel packets (slight latency impact)
- * - 'clientPacket' / 'serverPacket': Legacy events (same as intercept, for backward compatibility)
- * 
- * For maximum performance, use Monitor events unless you need to cancel/modify packets.
- */
-
-
 class ProxyManager {
     constructor() {
         this.config = loadConfig();
         this.proxyAPI = new PluginAPI(this);
-        this.authManager = new AuthManager(this, BASE_DIR);
         this.commandHandler = new CommandHandler(this);
         this.pluginManager = new PluginManager(this, this.proxyAPI, BASE_DIR);
-        this.gameState = new GameState();
+        this.BASE_DIR = BASE_DIR;
 
         this.server = null;
         this.currentPlayer = null;
-        this.isSwitching = false;
         this.forceNextAuth = false;
+        this.loginAttempts = new Map();
         
         this.registerProxyCommands();
         this.pluginManager.loadPlugins();
@@ -192,39 +177,37 @@ class ProxyManager {
         });
     }
 
-
-
-    /**
-     * Sends the necessary packets to put a client into a void "limbo" world.
-     * @param {mc.Client} client The client to send packets to.
-     */
-    createLimboWorld(client) {
-        if (!client || client.state !== mc.states.PLAY) return;
-
-        client.write('login', {
-            entityId: 1,
-            gameMode: 1,
-            dimension: 0,
-            difficulty: 0,
-            maxPlayers: 1,
-            levelType: 'flat',
-            reducedDebugInfo: false
-        });
-
-        client.write('position', {
-            x: 0.5,
-            y: 3000,
-            z: 0.5,
-            yaw: 0,
-            pitch: 0,
-            flags: 0
-        });
+    checkRateLimit(username) {
+        const now = Date.now();
+        const attempts = this.loginAttempts.get(username) || { count: 0, lastAttempt: 0 };
+        
+        if (now - attempts.lastAttempt > 20000) {
+            attempts.count = 0;
+        }
+        
+        if (attempts.count >= 2) {
+            const timeSinceLastAttempt = now - attempts.lastAttempt;
+            if (timeSinceLastAttempt < 20000) {
+                return true;
+            }
+        }
+        
+        attempts.count++;
+        attempts.lastAttempt = now;
+        this.loginAttempts.set(username, attempts);
+        
+        for (const [user, data] of this.loginAttempts.entries()) {
+            if (now - data.lastAttempt > 60000) {
+                this.loginAttempts.delete(user);
+            }
+        }
+        
+        return false;
     }
 
+
     switchServer(target) {
-        if (!this.currentPlayer) {
-            return;
-        }
+        if (!this.currentPlayer) return;
 
         const serverInfo = this.parseServerTarget(target);
         if (!serverInfo) {
@@ -233,17 +216,14 @@ class ProxyManager {
         }
 
         const username = this.currentPlayer.username;
-        
-        if (this.authManager.checkRateLimit(username)) {
-            this.sendChatMessage(this.currentPlayer.client, 
-                `§cYou will be rate limited by Microsoft for 20 seconds. Please wait before switching servers.`);
+        if (this.checkRateLimit(username)) {
+            this.sendChatMessage(this.currentPlayer.client, `§cYou will be rate limited by Microsoft for 20 seconds. Please wait before switching servers.`);
             return;
         }
 
         this.config.targetHost = serverInfo.host;
         this.config.targetPort = serverInfo.port;
         this.saveConfig(this.config);
-        
         this.updateServerMOTD();
         
         let displayName = target;
@@ -302,7 +282,6 @@ class ProxyManager {
         this.server.on('error', (err) => console.error(`Proxy server error:`, err));
         this.server.on('listening', () => {
             console.log(`Server is running in online mode.`);
-            this.isSwitching = false;
         });
     }
 
@@ -332,104 +311,20 @@ class ProxyManager {
      * @param {mc.Client} client The client object for the connecting player.
      */
     handlePlayerLogin(client) {
-        this.authManager.handleLogin(client);
+        if (this.currentPlayer) {
+            client.end('§cProxy is already in use.');
+            return;
+        }
+        this.currentPlayer = new PlayerSession(this, client);
     }
 
-
-
-
-    /**
-     * Sets up the two-way forwarding of packets between the client and target server.
-     * @param {object} loginPacket The login packet from the target server.
-     */
-    setupPacketForwarding(loginPacket) {
-        const { client, targetClient, username } = this.currentPlayer;
-
-        this.gameState.reset();
-        this.gameState.setLoginPacket(loginPacket);
-        let cleanupDone = false;
-    
-        const doFinalCleanup = () => {
-            if (cleanupDone) return;
-            cleanupDone = true;
-
-            if (this.currentPlayer) {
-                this.proxyAPI.emit('playerLeave', { username, player: this.currentPlayer });
-                this.currentPlayer = null;
-            }
-            this.gameState.reset();
-        };
-
-        client.on('end', (reason) => {
-            console.log(`Player ${username} disconnected.`);
-            if (targetClient && targetClient.state !== mc.states.DISCONNECTED) {
-                targetClient.end('Client disconnected');
-            }
-            doFinalCleanup();
-        });
-        
-        client.on('error', (err) => {
-            console.log(`Player ${username} disconnected.`);
-            if (targetClient && targetClient.state !== mc.states.DISCONNECTED) {
-                targetClient.end('Client error');
-            }
-            doFinalCleanup();
-        });
-
-        targetClient.removeAllListeners('end');
-        targetClient.removeAllListeners('error');
-
-        targetClient.on('end', (reason) => {
-            if (client && client.state !== mc.states.DISCONNECTED) {
-                client.end('Server disconnected');
-            }
-            doFinalCleanup();
-        });
-        
-        targetClient.on('error', (err) => {
-            if (client && client.state !== mc.states.DISCONNECTED) {
-                client.end('Server error');
-            }
-            doFinalCleanup();
-        });
-        
-        console.log(`Joined ${this.config.targetHost} as ${username}.`);
-        this.currentPlayer.entityId = loginPacket.entityId;
-        
-        client.write('login', loginPacket);
-        this.proxyAPI.emit('playerJoin', { username, player: this.currentPlayer });
-        
-        client.removeAllListeners('packet');
-        client.on('packet', (data, meta) => {
-            if (meta.name === 'chat' && this.commandHandler.handleCommand(data.message, client)) {
-                return;
-            }
-            
-            const passiveEvent = { username, player: this.currentPlayer, data, meta };
-            this.proxyAPI.emit('clientPacketMonitor', passiveEvent);
-            
-            const interceptEvent = { username, player: this.currentPlayer, data, meta, cancelled: false };
-            this.proxyAPI.emit('clientPacketIntercept', interceptEvent);
-            
-            if (!interceptEvent.cancelled && targetClient.state === mc.states.PLAY) {
-                targetClient.write(meta.name, data);
-            }
-        });
-
-        targetClient.removeAllListeners('packet');
-        targetClient.on('packet', (data, meta) => {
-            this.gameState.updateFromServerPacket(meta.name, data);
-            const passiveEvent = { username, player: this.currentPlayer, data, meta };
-            this.proxyAPI.emit('serverPacketMonitor', passiveEvent);
-            
-            const interceptEvent = { username, player: this.currentPlayer, data, meta, cancelled: false };
-            this.proxyAPI.emit('serverPacketIntercept', interceptEvent);
-            
-            if (!interceptEvent.cancelled && client.state === mc.states.PLAY) {
-                client.write(meta.name, data);
-            }
-        });
+    clearSession() {
+        if (this.currentPlayer) {
+            console.log(`Session cleared for ${this.currentPlayer.username}.`);
+            this.currentPlayer = null;
+        }
     }
+
 
     /**
      * Sends a chat message to a client.
@@ -448,7 +343,7 @@ class ProxyManager {
     }
 
     getJoinState() {
-        return this.gameState.getSnapshot();
+        return this.currentPlayer ? this.currentPlayer.gameState.getSnapshot() : null;
     }
 
     /**
@@ -456,8 +351,9 @@ class ProxyManager {
      * @param {string} reason The reason for kicking.
      */
     kickPlayer(reason) {
-        if (!this.currentPlayer || !this.currentPlayer.client) return;
-        this.currentPlayer.client.end(reason);
+        if (this.currentPlayer) {
+            this.currentPlayer.end(reason);
+        }
     }
 }
 
