@@ -7,18 +7,16 @@ A personal Minecraft proxy server with Microsoft authentication, dynamic server 
 **Things to be finished before release- DM me (@hexze) if you'd like to cross something off the list, and make a pull request**
 
 ### Proxy
-- Full plugin API for the easiest possible plugin development
-   - Dependency system, allow certain features to be used only if certain plugins are installed
-   - Versioning
-   - Obfuscated plugins..?
+- Test and complete plugin API
+   - Add versioning
 - Exitlag compat(?)
 
 ### Plugins
 
 #### Anticheat
 **Chat alerts for blatant cheaters**
-- Fix ScaffoldB and ScaffoldC checks falsing very often
-- Improve checks in general
+- Rewrite all checks
+- Certainty Threshild
 - /wdr command in chat for players who flag past a certain threshold
 
 #### Urchin
@@ -27,8 +25,8 @@ A personal Minecraft proxy server with Microsoft authentication, dynamic server 
 
 #### Denicker
 **Chat/tab indicators for nicks (resolves nicks when the player uses their player skin)**
-- Fix script trying to resolve nicks with preset skins
-- Make sure tab indicator is not overwritten by Hypixel
+- FEATURE COMPLETE
+- Change config options
 
 #### BW-Stats
 **Chat/tab stats for players at the start of your bedwars game**
