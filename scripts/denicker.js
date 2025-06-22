@@ -7,6 +7,7 @@ module.exports = (api) => {
         displayName: 'Denicker',
         prefix: '§cDN',
         version: '0.0.5',
+        author: 'Hexze',
         description: 'Detects and resolves nicked players (Inspired by github.com/PugrillaDev)'
     });
 

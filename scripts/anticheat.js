@@ -7,8 +7,8 @@ module.exports = (api) => {
         displayName: 'Anticheat',
         prefix: '§cAC',
         version: '0.0.5',
-        description: 'Advanced cheater detector system (Inspired by github.com/PugrillaDev)',
-        author: 'System'
+        author: 'Hexze',
+        description: 'Advanced cheater detector system (Inspired by github.com/PugrillaDev)'
     });
 
     api.initializeConfig(generateConfigSchema());
@@ -119,41 +119,42 @@ const generateConfigSchema = () => {
 };
 
 
-const getCheckDefinitions = () => {
-    return {
+const getCheckDefinitions = () => {return {
     NoSlowA: {
-            enabled: true, 
-            sound: true, 
-            vl: 10, 
-            cooldown: 2000, 
-            description: "Detects moving at full speed while using items (eating/blocking/drawing bow)" 
+        enabled: true, 
+        sound: true, 
+        vl: 10, 
+        cooldown: 2000, 
+        description: "Detects moving at full speed while using items (eating/blocking/drawing bow)" 
     },
     
     AutoBlockA: {
-            enabled: true, 
-            sound: true, 
-            vl: 10, 
-            cooldown: 2000, 
-            description: "Detects attacking while blocking with sword" 
+        enabled: true, 
+        sound: true, 
+        vl: 10, 
+        cooldown: 2000, 
+        description: "Detects attacking while blocking with sword" 
     },
     
     ScaffoldA: {
-            enabled: true, 
-            sound: true, 
-            vl: 10, 
-            cooldown: 2000, 
-            description: "Detects suspicious block placement patterns while bridging" 
-        },
+        enabled: true, 
+        sound: true, 
+        vl: 10, 
+        cooldown: 2000, 
+        description: "Detects suspicious block placement patterns while bridging" 
+    },
         
-        TowerA: { 
-            enabled: true, 
-            sound: true, 
-            vl: 10, 
-            cooldown: 2000, 
-            description: "Detects building upward faster than possible" 
-        }
-    };
-};
+    TowerA: { 
+        enabled: true, 
+        sound: true, 
+        vl: 10, 
+        cooldown: 2000, 
+        description: "Detects building upward faster than possible" 
+    }
+};};
+
+const SWORDS = [267, 268, 272, 276, 283];
+const FOOD_ITEMS = [260, 297, 319, 320, 322, 335, 349, 350, 354, 357, 360, 363, 364, 365, 366, 367, 373, 391, 392, 393, 394, 396, 400, 411, 412, 413, 423, 424];
 
 const CHECKS = {
     NoSlowA: (anticheat, player, config) => {
@@ -190,9 +191,6 @@ class AnticheatSystem {
         this.config = api.getConfig();
         this.pluginPrefix = api.getPrefix();
     }
-
-    SWORDS = [267, 268, 272, 276, 283];
-    FOOD_ITEMS = [260, 297, 319, 320, 322, 335, 349, 350, 354, 357, 360, 363, 364, 365, 366, 367, 373, 391, 392, 393, 394, 396, 400, 411, 412, 413, 423, 424];
 
     getConfig() {
         return this.config;
