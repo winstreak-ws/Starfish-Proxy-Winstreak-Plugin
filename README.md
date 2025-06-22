@@ -109,7 +109,7 @@ Each module supports `/help` commands:
 
 ## Configuration
 
-The proxy creates a `proxy-config.json` file with your settings:
+The proxy creates a `starfish-config.json` file with your settings:
 
 ```json
 {
