@@ -1,8 +1,5 @@
 const { Command, Option } = require('commander');
 
-// =============================================================================
-// == Utility Functions
-// =============================================================================
 function getProperty(obj, path) {
     if (obj === undefined || obj === null) return undefined;
     return path.split('.').reduce((o, i) => (o === undefined || o === null) ? o : o[i], obj);
@@ -17,9 +14,7 @@ function setProperty(obj, path, value) {
     }
 }
 
-// =============================================================================
-// == Theme & Color Palette
-// =============================================================================
+// theme
 const THEME = {
     primary: '§6',   // Gold - Main commands, important elements
     secondary: '§e', // Yellow - Labels, secondary headings
@@ -34,9 +29,7 @@ const THEME = {
     none: '§f'     // White - Default
 };
 
-// =============================================================================
-// == ChatBuilder Utility
-// =============================================================================
+
 class ChatBuilder {
     constructor(commandHandler, client) {
         this.commandHandler = commandHandler;
@@ -104,45 +97,36 @@ class ChatBuilder {
             text: '',
             extra: this._components
         });
-        this.commandHandler.proxyManager.sendChatMessage(this.client, message);
+        this.commandHandler.proxy.sendMessage(this.client, message);
     }
 }
 
 
-// =============================================================================
-// == Command Handler Core
-// =============================================================================
+
 class CommandHandler {
-    constructor(proxyManager) {
-        this.proxyManager = proxyManager;
-        this.proxyAPI = proxyManager.proxyAPI;
+    constructor(proxy) {
+        this.proxy = proxy;
         this.modules = new Map();
         this.THEME = THEME;
     }
     
-    /**
-     * The main entry point for plugins to register their commands.
-     * Provides a fluent, feature-rich API for command creation.
-     */
-    register(moduleName, registrationFunction) {
-        if (this.modules.has(moduleName)) {
-            console.warn(`Module '${moduleName}' is being re-registered. Old commands are cleared.`);
-        }
 
-        const moduleCommand = new Command(moduleName)
+    register(moduleName, registrationFunction) {
+        const normalizedModuleName = moduleName.toLowerCase();
+        const moduleCommand = new Command(normalizedModuleName)
             .exitOverride()
             .configureOutput({ writeOut: () => {}, writeErr: () => {} })
             .addHelpCommand(false);
 
-        if (moduleName !== 'proxy') {
-            this.proxyManager.pluginManager.addPluginManagementCommands(moduleCommand, moduleName);
+        if (normalizedModuleName !== 'proxy') {
+            this.addToggleCommand(moduleCommand, normalizedModuleName);
         }
         
         const registry = {
-            command: (name) => this._createCommandBuilder(moduleCommand, name, moduleName),
+            command: (name) => this._createCommandBuilder(moduleCommand, name, normalizedModuleName),
             THEME: this.THEME,
             registerConfig: (options) => {
-                this._registerConfigCommand(moduleCommand, moduleName, options);
+                this._registerConfigCommand(moduleCommand, normalizedModuleName, options);
             }
         };
 
@@ -153,11 +137,53 @@ class CommandHandler {
             .option('-p, --page <number>', 'Page number for command list', '1')
             .action((commandName, opts, cmd) => {
                  const page = parseInt(opts.page) || 1;
-                 this._sendHelpMessage(moduleName, commandName, this._currentClient, page);
+                 this._sendHelpMessage(normalizedModuleName, commandName, this._currentClient, page);
             });
             
-        this.modules.set(moduleName, moduleCommand);
-        console.log(`Registered commands for module: ${moduleName}`);
+        this.modules.set(normalizedModuleName, moduleCommand);
+    }
+    
+    _getStandardPluginSettings(moduleName) {
+        const plugin = this.proxy.pluginAPI.plugins.get(moduleName);
+        if (!plugin) return null;
+
+        const displayName = plugin.metadata.displayName || moduleName;
+
+        return {
+            label: `${displayName} Plugin`,
+            resetAll: true,
+            settings: [
+                { key: 'enabled', type: 'toggle' },
+                { key: 'debug', type: 'toggle', condition: (config) => config.enabled }
+            ],
+            defaults: {
+                enabled: plugin.metadata.defaultEnabled === undefined ? true : plugin.metadata.defaultEnabled,
+                debug: false
+            }
+        };
+    }
+
+    addToggleCommand(moduleCommand, moduleName) {
+        moduleCommand.command('toggle')
+            .description(`Toggle the ${moduleName} plugin on/off`)
+            .action(() => {
+                const currentState = this.proxy.pluginAPI.isPluginEnabled(moduleName);
+                const newState = !currentState;
+                
+                if (this.proxy.pluginAPI.setPluginEnabled(moduleName, newState)) {
+                    const plugin = this.proxy.pluginAPI.plugins.get(moduleName);
+                    const displayName = plugin?.metadata.displayName || moduleName;
+                    const status = newState ? '§aenabled' : '§cdisabled';
+                    this.proxy.sendMessage(this._currentClient, `§8[§6Proxy§8] §7${displayName} is now ${status}§7.`);
+                } else {
+                    const dependents = this.proxy.pluginAPI.getPluginDependents(moduleName);
+                    if (dependents.length > 0) {
+                        this.proxy.sendMessage(this._currentClient, `§cCannot disable ${moduleName} because these plugins depend on it: ${dependents.join(', ')}`);
+                    } else {
+                        this.proxy.sendMessage(this._currentClient, `§cFailed to toggle ${moduleName} plugin.`);
+                    }
+                }
+            });
     }
     
     _createCommandBuilder(moduleCommand, name, moduleName) {
@@ -177,12 +203,10 @@ class CommandHandler {
                 return builder;
             },
             
-            argument: (argName, { type = 'string', description = '', optional = false, defaultValue = null, choices = null } = {}) => {
+            argument: (argName, options = {}) => {
+                const { type = 'string', description = '', optional = false, defaultValue = null, choices = null } = options;
                 let usageString = optional ? `[${argName}]` : `<${argName}>`;
-                if (type === 'greedy') {
-                    usageString = optional ? `[${argName}...]` : `<${argName}...>`;
-                }
-
+                
                 const argMeta = { name: argName, type, description, optional, defaultValue, choices, usage: usageString };
                 commandMetadata.arguments.push(argMeta);
                 
@@ -217,24 +241,13 @@ class CommandHandler {
                     
                     const ctx = {
                         client: this._currentClient,
-                        proxyAPI: this.proxyAPI,
                         args: parsedArgs,
                         options,
                         THEME: this.THEME,
-                        send: (message) => this.proxyManager.sendChatMessage(this._currentClient, message),
-                        sendSuccess: (message) => this.proxyManager.sendChatMessage(this._currentClient, `${this.THEME.success}✓ ${message}`),
-                        sendError: (message) => this.proxyManager.sendChatMessage(this._currentClient, `${this.THEME.error}✗ ${message}`),
-                        createChat: () => new ChatBuilder(this, this._currentClient),
-                        createPaginator: (items, title, lineRenderer, pageSize = 7) => {
-                            const page = parseInt(options.page) || 1;
-                            return this._createPaginator(this._currentClient, items, title, lineRenderer, pageSize, page);
-                        },
-                        createConfig: (opts) => {
-                             const page = parseInt(options.page) || 1;
-                             return this._createConfig({ ...opts, client: this._currentClient, moduleName, page });
-                        },
-                        setProperty: setProperty,
-                        getProperty: getProperty
+                        send: (message) => this.proxy.sendMessage(this._currentClient, message),
+                        sendSuccess: (message) => this.proxy.sendMessage(this._currentClient, `${this.THEME.success}✓ ${message}`),
+                        sendError: (message) => this.proxy.sendMessage(this._currentClient, `${this.THEME.error}✗ ${message}`),
+                        createChat: () => new ChatBuilder(this, this._currentClient)
                     };
                     
                     handlerFn(ctx);
@@ -253,14 +266,14 @@ class CommandHandler {
         if (moduleName === 'proxy') {
             displayName = 'Proxy';
         } else {
-            const pluginData = this.proxyManager.pluginManager.plugins.get(moduleName);
-            displayName = pluginData?.info.displayName || moduleName;
+            const plugin = this.proxy.pluginAPI.plugins.get(moduleName);
+            displayName = plugin?.metadata.displayName || moduleName;
         }
 
         if (commandName) {
             const cmd = moduleCommand.commands.find(c => c.name() === commandName);
             if (!cmd) {
-                this.proxyManager.sendChatMessage(client, `${THEME.error}Unknown command: ${commandName}`);
+                this.proxy.sendMessage(client, `${THEME.error}Unknown command: ${commandName}`);
                 return;
             }
             
@@ -277,8 +290,30 @@ class CommandHandler {
                 });
             }
             
+            let hoverText = `${THEME.accent}/${moduleName} ${cmd.name()}\\n`;
+            hoverText += `${THEME.muted}§m--------------------------§r\\n`;
+            hoverText += `${THEME.info}${cmd.description() || 'No description available.'}\\n\\n`;
+            hoverText += `${THEME.secondary}Usage: ${THEME.text}${usage}\\n`;
+            
+            if (cmd._metadata && cmd._metadata.arguments.length > 0) {
+                hoverText += `\\n${THEME.secondary}Arguments:\\n`;
+                cmd._metadata.arguments.forEach(arg => {
+                    const argType = arg.optional ? 'Optional' : 'Required';
+                    hoverText += `${THEME.muted}• ${THEME.primary}${arg.usage} ${THEME.muted}(${argType})`;
+                    if (arg.description) hoverText += `${THEME.muted} - ${THEME.text}${arg.description}`;
+                    hoverText += '\\n';
+                });
+            }
+            
+            if (cmd.options && cmd.options.length > 0) {
+                hoverText += `\\n${THEME.secondary}Options:\\n`;
+                cmd.options.forEach(opt => {
+                    hoverText += `${THEME.muted}• ${THEME.primary}${opt.flags} ${THEME.muted}- ${THEME.info}${opt.description}\\n`;
+                });
+            }
+            
             chat.text('Usage: ', THEME.secondary);
-            chat.suggestButton(usage, usage, `${THEME.text}Click to paste this command into chat!`, THEME.primary);
+            chat.suggestButton(usage, usage, hoverText, THEME.primary);
             chat.newline().newline();
             
             if (cmd._metadata && cmd._metadata.arguments.length > 0) {
@@ -312,18 +347,7 @@ class CommandHandler {
         } else {
             const baseCommands = moduleCommand.commands.filter(c => c.name() !== 'help');
             
-            const helpCommand = {
-                name: () => 'help',
-                description: () => 'Show help for a specific command',
-                _metadata: {
-                    arguments: [
-                        { usage: '[command]', optional: true, description: 'Command name to get help for' }
-                    ]
-                },
-                options: []
-            };
-            
-            const commands = [helpCommand, ...baseCommands];
+            const commands = baseCommands;
             const pageSize = 5;
             const totalPages = Math.ceil(commands.length / pageSize);
             page = Math.max(1, Math.min(page, totalPages));
@@ -334,7 +358,7 @@ class CommandHandler {
             chat.text('§m-----------------------------------------------------§r', THEME.muted).newline();
             chat.text(`${displayName} Commands`, THEME.primary).newline();
             
-            pageCommands.forEach((cmd, index) => {
+            pageCommands.forEach((cmd) => {
                 let usage = `/${moduleName} ${cmd.name()}`;
                 let argsText = '';
                 if (cmd._metadata) {
@@ -345,29 +369,29 @@ class CommandHandler {
                     });
                 }
                 
-                let hoverText = `${THEME.accent}/${moduleName} ${cmd.name()}\n`;
-                hoverText += `${THEME.muted}§m--------------------------§r\n`;
-                hoverText += `${THEME.info}${cmd.description() || 'No description available.'}\n\n`;
-                hoverText += `${THEME.secondary}Usage: ${THEME.text}${usage}\n`;
+                let hoverText = `${THEME.accent}/${moduleName} ${cmd.name()}\\n`;
+                hoverText += `${THEME.muted}§m--------------------------§r\\n`;
+                hoverText += `${THEME.info}${cmd.description() || 'No description available.'}\\n\\n`;
+                hoverText += `${THEME.secondary}Usage: ${THEME.text}${usage}\\n`;
                 
                 if (cmd._metadata && cmd._metadata.arguments.length > 0) {
-                    hoverText += `\n${THEME.secondary}Arguments:\n`;
+                    hoverText += `\\n${THEME.secondary}Arguments:\\n`;
                     cmd._metadata.arguments.forEach(arg => {
                         const argType = arg.optional ? 'Optional' : 'Required';
                         hoverText += `${THEME.muted}• ${THEME.primary}${arg.usage} ${THEME.muted}(${argType})`;
                         if (arg.description) hoverText += `${THEME.muted} - ${THEME.text}${arg.description}`;
-                        hoverText += '\n';
+                        hoverText += '\\n';
                     });
                 }
                 
                 if (cmd.options && cmd.options.length > 0) {
-                    hoverText += `\n${THEME.secondary}Options:\n`;
+                    hoverText += `\\n${THEME.secondary}Options:\\n`;
                     cmd.options.forEach(opt => {
-                        hoverText += `${THEME.muted}• ${THEME.primary}${opt.flags} ${THEME.muted}- ${THEME.info}${opt.description}\n`;
+                        hoverText += `${THEME.muted}• ${THEME.primary}${opt.flags} ${THEME.muted}- ${THEME.info}${opt.description}\\n`;
                     });
                 }
                 
-                hoverText += `\n${THEME.text}Click to paste command`;
+                hoverText += `\\n${THEME.text}Click to paste command`;
 
                 if (argsText) {
                     chat.suggestButton(`/${moduleName} ${cmd.name()}`, usage, hoverText, THEME.secondary);
@@ -378,44 +402,48 @@ class CommandHandler {
                 chat.newline();
             });
 
-            if (totalPages > 1) {
-                chat.text('[', THEME.text);
-                if (page > 1) {
-                    chat.runButton('«', `/${moduleName} help --page 1`, 'Go to first page', THEME.primary);
-                } else {
-                    chat.text('«', THEME.muted);
-                }
-                chat.text('] [', THEME.text);
-                
-                if (page > 1) {
-                    chat.runButton('<', `/${moduleName} help --page ${page - 1}`, `Go to page ${page - 1}`, THEME.primary);
-                } else {
-                    chat.text('<', THEME.muted);
-                }
-                
-                chat.text('] ', THEME.text);
-                chat.text(`Page ${page}/${totalPages}`, THEME.secondary);
-                chat.text(' [', THEME.text);
-                
-                if (page < totalPages) {
-                    chat.runButton('>', `/${moduleName} help --page ${page + 1}`, `Go to page ${page + 1}`, THEME.primary);
-                } else {
-                    chat.text('>', THEME.muted);
-                }
-                
-                chat.text('] [', THEME.text);
-                if (page < totalPages) {
-                    chat.runButton('»', `/${moduleName} help --page ${totalPages}`, 'Go to last page', THEME.primary);
-                } else {
-                    chat.text('»', THEME.muted);
-                }
-                chat.text(']', THEME.text);
-                chat.newline();
-            }
+            this._createPaginator(chat, page, totalPages, `/${moduleName} help`);
         }
 
         chat.text('§m-----------------------------------------------------§r', THEME.muted);
         chat.send();
+    }
+
+    _createPaginator(chat, page, totalPages, baseCommand) {
+        if (totalPages <= 1) return;
+
+        chat.text('[', this.THEME.text);
+        if (page > 1) {
+            chat.runButton('«', `${baseCommand} --page 1`, 'Go to first page', this.THEME.primary);
+        } else {
+            chat.text('«', this.THEME.muted);
+        }
+        chat.text('] [', this.THEME.text);
+        
+        if (page > 1) {
+            chat.runButton('<', `${baseCommand} --page ${page - 1}`, `Go to page ${page - 1}`, this.THEME.primary);
+        } else {
+            chat.text('<', this.THEME.muted);
+        }
+        
+        chat.text('] ', this.THEME.text);
+        chat.text(`Page ${page}/${totalPages}`, this.THEME.secondary);
+        chat.text(' [', this.THEME.text);
+        
+        if (page < totalPages) {
+            chat.runButton('>', `${baseCommand} --page ${page + 1}`, `Go to page ${page + 1}`, this.THEME.primary);
+        } else {
+            chat.text('>', this.THEME.muted);
+        }
+        
+        chat.text('] [', this.THEME.text);
+        if (page < totalPages) {
+            chat.runButton('»', `${baseCommand} --page ${totalPages}`, 'Go to last page', this.THEME.primary);
+        } else {
+            chat.text('»', this.THEME.muted);
+        }
+        chat.text(']', this.THEME.text);
+        chat.newline();
     }
 
     _registerConfigCommand(moduleCommand, moduleName, pluginOptions) {
@@ -437,24 +465,15 @@ class CommandHandler {
                 const { set, page, resetSetting, resetAllConfirm, resetAllExecute } = cmd.opts();
                 
                 const baseSchema = schemaBuilder();
-                const standardSettings = this.proxyManager.pluginManager.getStandardPluginSettings(moduleName);
+                const standardSettings = this._getStandardPluginSettings(moduleName);
                 
-                const enhancedBaseSchema = baseSchema.map(item => {
-                    const { resetAll, ...itemWithoutResetAll } = item;
-                    return {
-                        ...itemWithoutResetAll,
-                        isEnabled: item.isEnabled || ((config) => config.enabled)
-                    };
-                });
-                
-                const schema = [standardSettings, ...enhancedBaseSchema];
+                const schema = standardSettings ? [standardSettings, ...baseSchema] : baseSchema;
                 
                 const ctx = {
                     client: this._currentClient,
-                    proxyAPI: this.proxyAPI,
                     THEME: this.THEME,
                     createChat: () => new ChatBuilder(this, this._currentClient),
-                    sendSuccess: (message) => this.proxyManager.sendChatMessage(this._currentClient, `${this.THEME.success}✓ ${message}`),
+                    sendSuccess: (message) => this.proxy.sendMessage(this._currentClient, `${this.THEME.success}✓ ${message}`),
                 };
 
                 if (resetAllConfirm) {
@@ -478,9 +497,13 @@ class CommandHandler {
                             const fullPath = setting.key;
                             const defaultValue = getProperty(item.defaults, key);
 
-                            if (fullPath === 'enabled' || fullPath === 'debug') continue;
-                            
-                            setProperty(configObject, fullPath, defaultValue);
+                            if (fullPath === 'enabled') {
+                                this.proxy.pluginAPI.setPluginEnabled(moduleName, defaultValue);
+                            } else if (fullPath === 'debug') {
+                                this.proxy.pluginAPI.setPluginDebugEnabled(moduleName, defaultValue);
+                            } else {
+                                setProperty(configObject, fullPath, defaultValue);
+                            }
                         }
                     });
                     ctx.sendSuccess(`All ${displayName} settings have been reset to default.`);
@@ -488,22 +511,30 @@ class CommandHandler {
                 
                 if (resetSetting) {
                     const keys = resetSetting.replace(/"/g, '').split(',');
-                    const allDefaults = schema.reduce((acc, item) => ({ ...acc, ...item.defaults }), {});
 
                     keys.forEach(key => {
-                         const schemaItem = schema.find(item => item.settings.some(s => s.key === key));
-                         const defaultValue = schemaItem ? getProperty(schemaItem.defaults, key.split('.').pop()) : undefined;
+                        const schemaItem = schema.find(item => item.settings.some(s => s.key === key));
+                        if (!schemaItem || !schemaItem.defaults) return;
+
+                        const defaultPrefix = Object.keys(schemaItem.defaults).find(prefix => key.startsWith(prefix));
+                        if (!defaultPrefix) return;
+
+                        const fullDefaultObject = schemaItem.defaults[defaultPrefix];
+                        const propertyPathInDefault = key.substring(defaultPrefix.length + 1);
+                        const defaultValue = getProperty(fullDefaultObject, propertyPathInDefault);
 
                          if (defaultValue !== undefined) {
                             if (key === 'enabled') {
-                                this.proxyManager.pluginManager.setPluginEnabled(moduleName, defaultValue);
+                                this.proxy.pluginAPI.setPluginEnabled(moduleName, defaultValue);
                             } else if (key === 'debug') {
-                                this.proxyManager.pluginManager.setPluginDebug(moduleName, defaultValue);
+                                this.proxy.pluginAPI.setPluginDebugEnabled(moduleName, defaultValue);
                             } else {
                                 setProperty(configObject, key, defaultValue);
                             }
                          }
                     });
+                    
+                    if (saveHandler) saveHandler();
                 }
 
                 if (set) {
@@ -511,56 +542,28 @@ class CommandHandler {
                     let value = valueStr;
                     if (valueStr === 'true') value = true;
                     else if (valueStr === 'false') value = false;
-                    else if (!isNaN(Number(valueStr))) value = Number(valueStr);
+                    else if (!isNaN(Number(valueStr)) && valueStr.trim() !== '') value = Number(valueStr);
                     
                     if (key === 'enabled') {
-                        this.proxyManager.pluginManager.setPluginEnabled(moduleName, value);
+                        this.proxy.pluginAPI.setPluginEnabled(moduleName, value);
                     } else if (key === 'debug') {
-                        this.proxyManager.pluginManager.setPluginDebug(moduleName, value);
+                        this.proxy.pluginAPI.setPluginDebugEnabled(moduleName, value);
                     } else {
                         setProperty(configObject, key, value);
-                    }
                 }
 
-                if (set || resetSetting || resetAllExecute) {
                     if (saveHandler) saveHandler();
-
-                    const refreshedBaseSchema = schemaBuilder();
-                    const refreshedStandardSettings = this.proxyManager.pluginManager.getStandardPluginSettings(moduleName);
-                    
-                    const refreshedEnhancedBaseSchema = refreshedBaseSchema.map(item => {
-                        const { resetAll, ...itemWithoutResetAll } = item;
-                        return {
-                            ...itemWithoutResetAll,
-                            isEnabled: item.isEnabled || ((config) => config.enabled)
-                        };
-                    });
-                    
-                    const refreshedSchema = [refreshedStandardSettings, ...refreshedEnhancedBaseSchema];
-                    
-                    this._createConfig({
-                        client: this._currentClient,
-                        config: { 
-                            ...configObject, 
-                            enabled: this.proxyManager.pluginManager.isPluginEnabled(moduleName),
-                            debug: this.proxyManager.pluginManager.isPluginDebugEnabled(moduleName)
-                        },
-                        schema: refreshedSchema,
-                        title: `${displayName || moduleName} Config`,
-                        baseCommand: `/${moduleName} config`,
-                        page: parseInt(page) || 1
-                    });
-                    return;
                 }
 
                 this._createConfig({
                     client: this._currentClient,
+                    moduleName,
                     config: { 
                         ...configObject, 
-                        enabled: this.proxyManager.pluginManager.isPluginEnabled(moduleName),
-                        debug: this.proxyManager.pluginManager.isPluginDebugEnabled(moduleName)
+                        enabled: this.proxy.pluginAPI.isPluginEnabled(moduleName),
+                        debug: this.proxy.pluginAPI.isPluginDebugEnabled(moduleName)
                     },
-                    schema: schema,
+                    schema,
                     title: `${displayName || moduleName} Config`,
                     baseCommand: `/${moduleName} config`,
                     page: parseInt(page) || 1
@@ -581,78 +584,67 @@ class CommandHandler {
         chat.text('§m-----------------------------------------------------§r', THEME.muted).newline();
         chat.text(title, THEME.primary).newline();
 
-        pageSchema.forEach(item => {
+        pageSchema.forEach((item, index) => {
             const mainToggleSetting = item.settings.find(s => s.type === 'toggle' && s.key.endsWith('enabled'));
             const otherSettings = mainToggleSetting ? item.settings.filter(s => s.key !== mainToggleSetting.key) : item.settings;
 
-            const hasEnableDisable = mainToggleSetting || item.settings.some(s => s.type === 'toggle');
-            const isLineEnabled = mainToggleSetting ? getProperty(config, mainToggleSetting.key) : (item.isEnabled ? item.isEnabled(config) : true);
+            const isPluginEnabled = this.proxy.pluginAPI.isPluginEnabled(moduleName);
+            const isLineFeatureEnabled = mainToggleSetting ? getProperty(config, mainToggleSetting.key) : (item.isEnabled ? item.isEnabled(config) : true);
             
-            if (hasEnableDisable) {
-                const toggleText = isLineEnabled ? '[+]' : '[-]';
-                const toggleColor = isLineEnabled ? THEME.success : THEME.error;
+            const toggleText = isLineFeatureEnabled ? '[+]' : '[-]';
+            const toggleColor = isLineFeatureEnabled ? THEME.success : THEME.error;
 
-                if (mainToggleSetting) {
-                    const command = `${baseCommand} --set ${mainToggleSetting.key}=${!isLineEnabled} --page ${currentPage}`;
-                    chat.runButton(toggleText, command, `Click to ${isLineEnabled ? 'disable' : 'enable'}`, toggleColor);
-                } else {
-                    chat.text(toggleText, toggleColor);
-                }
+            if (mainToggleSetting) {
+                const command = `${baseCommand} --set ${mainToggleSetting.key}=${!isLineFeatureEnabled} --page ${currentPage}`;
+                chat.runButton(toggleText, command, `Click to ${isLineFeatureEnabled ? 'disable' : 'enable'}`, toggleColor);
             } else {
-                chat.text('[-]', THEME.muted);
+                chat.text(toggleText, isLineFeatureEnabled ? toggleColor : THEME.muted);
             }
             chat.space();
 
-            let hoverText = `${THEME.accent}${item.label}\n${THEME.muted}§m--------------------------§r\n`;
-            const mainDescription = item.settings.find(s => s.description)?.description;
-            if (mainDescription) hoverText += `${THEME.info}${mainDescription}\n\n`;
+            let hoverText = `${THEME.accent}${item.label}\\n${THEME.muted}§m--------------------------§r\\n`;
+            if (item.description) hoverText += `${THEME.info}${item.description}\\n\\n`;
 
-            let lineLabel = new ChatBuilder(this, client).text(item.label, THEME.secondary).hover(hoverText);
+            const lineLabel = new ChatBuilder(this, client).text(item.label, (isLineFeatureEnabled && isPluginEnabled) ? THEME.secondary : THEME.muted);
+            if(item.description) lineLabel.hover(hoverText);
             chat._components.push(...lineLabel._components);
             
-            chat.text(' -', THEME.text).space();
+            chat.text(' -', THEME.muted).space();
 
             otherSettings.forEach((setting, index) => {
                 if (index > 0) chat.text(' | ', THEME.muted);
 
-                const isSettingEnabled = !setting.condition || setting.condition(config);
-                const finalEnabled = isLineEnabled && isSettingEnabled;
                 const currentValue = getProperty(config, setting.key);
 
                 switch (setting.type) {
                     case 'toggle':
                         if (setting.key.endsWith('debug')) {
+                            const command = `${baseCommand} --set ${setting.key}=${!currentValue} --page ${currentPage}`;
+                            const debugActiveColor = currentValue ? THEME.success : THEME.error;
+                            
                             chat.text('(Debug: ', THEME.text);
-                            const command = finalEnabled ? `${baseCommand} --set ${setting.key}=${!currentValue} --page ${currentPage}` : null;
-                            if(finalEnabled) {
-                                chat.runButton(currentValue ? 'ON' : 'OFF', command, 'Toggle Debug Mode', currentValue ? THEME.success : THEME.error);
-                            } else {
-                                chat.text(currentValue ? 'ON' : 'OFF', THEME.muted);
-                            }
+                            chat.runButton(currentValue ? 'ON' : 'OFF', command, 'Toggle Debug Mode', debugActiveColor);
                             chat.text(')', THEME.text);
                         }
                         break;
                     case 'soundToggle':
-                        const soundCommand = finalEnabled ? `${baseCommand} --set ${setting.key}=${!currentValue} --page ${currentPage}` : null;
-                        if (finalEnabled) {
-                            chat.runButton('[♪]', soundCommand, 'Toggle sound notification', THEME.special);
-                        } else {
-                            chat.text('[♪]', THEME.muted);
-                        }
+                        const soundCommand = `${baseCommand} --set ${setting.key}=${!currentValue} --page ${currentPage}`;
+                        const soundActiveColor = currentValue ? THEME.special : THEME.muted;
+                        
+                        chat.runButton('[♪]', soundCommand, 'Toggle sound notification', soundActiveColor);
                         break;
                     case 'cycle':
-                        const display = setting.values.find(v => v.value === currentValue) || setting.values[0];
-                        const command = finalEnabled ? `${baseCommand} --set ${setting.key}=${(setting.values[(setting.values.findIndex(v => v.value === currentValue) + 1) % setting.values.length]).value} --page ${currentPage}` : null;
+                        const currentIndex = setting.values.findIndex(v => v.value === currentValue);
+                        const nextValue = setting.values[(currentIndex + 1) % setting.values.length].value;
+                        const command = `${baseCommand} --set ${setting.key}=${nextValue} --page ${currentPage}`;
+                        const display = setting.values[currentIndex] || setting.values[0];
+                        const cycleActiveColor = THEME.accent;
                         
                         chat.text('(', THEME.text);
                         if (setting.displayLabel) {
                             chat.text(`${setting.displayLabel}: `, THEME.text);
                         }
-                        if (finalEnabled) {
-                            chat.runButton(display.text, command, `Change ${setting.displayLabel || 'value'}`, THEME.accent);
-                        } else {
-                            chat.text(display.text, THEME.muted);
-                        }
+                        chat.runButton(display.text, command, `Change ${setting.displayLabel || 'value'}`, cycleActiveColor);
                         chat.text(')', THEME.text);
                         break;
                 }
@@ -665,11 +657,8 @@ class CommandHandler {
             if (!item.resetAll) {
                 const settingKeysOnLine = item.settings.map(s => s.key).join(',');
                 const resetCommand = `${baseCommand} --reset-setting "${settingKeysOnLine}" --page ${currentPage}`;
-                if (isLineEnabled) {
-                    chat.runButton('[R]', resetCommand, `Reset ${item.label} settings`, THEME.info);
-                } else {
-                    chat.text('[R]', THEME.muted);
-                }
+                const resetColor = THEME.info;
+                chat.runButton('[R]', resetCommand, `Reset ${item.label} settings`, resetColor);
             }
 
             if (item.resetAll) {
@@ -680,107 +669,16 @@ class CommandHandler {
             chat.newline();
         });
 
-        if (totalPages > 1) {
-            chat.text('[', THEME.text);
-            if (currentPage > 1) {
-                chat.runButton('«', `${baseCommand} --page 1`, 'Go to first page', THEME.primary);
-            } else {
-                chat.text('«', THEME.muted);
-            }
-            chat.text('] [', THEME.text);
-            
-            if (currentPage > 1) {
-                chat.runButton('<', `${baseCommand} --page ${currentPage - 1}`, `Go to page ${currentPage - 1}`, THEME.primary);
-            } else {
-                chat.text('<', THEME.muted);
-            }
-            
-            chat.text('] ', THEME.text);
-            chat.text(`Page ${currentPage}/${totalPages}`, THEME.secondary);
-            chat.text(' [', THEME.text);
-            
-            if (currentPage < totalPages) {
-                chat.runButton('>', `${baseCommand} --page ${currentPage + 1}`, `Go to page ${currentPage + 1}`, THEME.primary);
-            } else {
-                chat.text('>', THEME.muted);
-            }
-            
-            chat.text('] [', THEME.text);
-            if (currentPage < totalPages) {
-                chat.runButton('»', `${baseCommand} --page ${totalPages}`, 'Go to last page', THEME.primary);
-            } else {
-                chat.text('»', THEME.muted);
-            }
-            chat.text(']', THEME.text);
-            chat.newline();
-        }
+        this._createPaginator(chat, currentPage, totalPages, baseCommand);
 
         chat.text('§m-----------------------------------------------------§r', THEME.muted);
         chat.send();
     }
 
-    _createPaginator(client, items, title, lineRenderer, pageSize = 7, page = 1) {
-        const totalPages = Math.ceil(items.length / pageSize);
-        page = Math.max(1, Math.min(page, totalPages));
 
-        const startIndex = (page - 1) * pageSize;
-        const pageItems = items.slice(startIndex, startIndex + pageSize);
-
-        const chat = new ChatBuilder(this, client);
-        
-        chat.text(`--- ${title} `, THEME.text);
-        if (totalPages > 1) {
-            chat.text(`(Page ${page}/${totalPages})`, THEME.secondary);
-        }
-        chat.text(' ---', THEME.text).newline();
-
-        pageItems.forEach(item => {
-            lineRenderer(chat, item);
-            chat.newline();
-        });
-
-        if (totalPages > 1) {
-            chat.text('Pages: ', THEME.secondary);
-            
-            if (page > 1) {
-                chat.runButton('[<<<]', `/help --page ${page - 1}`, `Go to page ${page - 1}`, THEME.text);
-                chat.text(' ', THEME.text);
-            } else {
-                chat.text('[<<<] ', THEME.muted);
-            }
-            
-            const startPage = Math.max(1, page - 2);
-            const endPage = Math.min(totalPages, page + 2);
-            
-            for (let i = startPage; i <= endPage; i++) {
-                if (i === page) {
-                    chat.text(`[${i}]`, THEME.primary);
-                } else {
-                    chat.runButton(`${i}`, `/help --page ${i}`, `Go to page ${i}`, THEME.text);
-                }
-                if (i < endPage) chat.text(' ', THEME.text);
-            }
-            
-            chat.text(' ', THEME.text);
-            
-            if (page < totalPages) {
-                chat.runButton('[>>>]', `/help --page ${page + 1}`, `Go to page ${page + 1}`, THEME.text);
-            } else {
-                chat.text('[>>>]', THEME.muted);
-            }
-            
-            chat.newline();
-        }
-
-        chat.text('§m-----------------------------------§r', THEME.muted).newline();
-        chat.send();
-    }
-
-    /**
-     * Handle incoming chat messages and dispatch commands.
-     */
     handleCommand(message, client) {
         if (!message.startsWith('/')) return false;
+        
         const parts = message.slice(1).split(' ').filter(Boolean);
         const moduleName = parts.shift()?.toLowerCase();
         const args = parts;
@@ -795,27 +693,19 @@ class CommandHandler {
 
         try {
             this._currentClient = client;
-            
             const argv = [process.execPath, __filename, ...args];
-            const configOptions = [];
-            Object.entries(moduleCommand.opts()).forEach(([key, value]) => {
-                if(args.includes(`--${key}`)) {
-                    configOptions.push(`--${key}`, value);
-                }
-            });
-
-            moduleCommand.parse([...argv, ...configOptions]);
-            
+            moduleCommand.parse(argv);
         } catch (error) {
             if (error.code === 'commander.unknownCommand') {
-                this.proxyManager.sendChatMessage(client, `${THEME.error}Unknown command. Use '/${moduleName} help'`);
+                this.proxy.sendMessage(client, `${THEME.error}Unknown command. Use '/${moduleName} help'`);
             } else {
                 console.error('Command error:', error);
-                this.proxyManager.sendChatMessage(client, `${THEME.error}An internal error occurred.`);
+                this.proxy.sendMessage(client, `${THEME.error}An error occurred while processing the command.`);
             }
         }
+        
         return true;
     }
 }
 
-module.exports = CommandHandler; 
+module.exports = { CommandHandler }; 

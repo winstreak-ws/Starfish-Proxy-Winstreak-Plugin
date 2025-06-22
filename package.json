@@ -1,15 +1,25 @@
 {
   "name": "starfish-proxy",
-  "version": "0.0.4c",
-  "description": "A Minecraft proxy with authentication and plugin support",
-  "main": "proxy.js",
+  "version": "0.0.5",
+  "description": "A powerful Minecraft proxy for running scripts and enhancing gameplay",
+  "main": "src/proxy.js",
   "scripts": {
-    "start": "node proxy.js",
+    "start": "node src/proxy.js",
     "build": "node build.js"
   },
+  "keywords": [
+    "minecraft",
+    "proxy",
+    "protocol"
+  ],
+  "author": "StarfishDev",
+  "license": "UNLICENSED",
   "dependencies": {
     "commander": "^14.0.0",
     "minecraft-protocol": "^1.57.0",
     "prismarine-auth": "^2.7.0"
+  },
+  "devDependencies": {
+    "nexe": "^4.0.0-rc.6"
   }
 }

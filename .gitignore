@@ -4,4 +4,4 @@ node_modules/
 auth_cache/
 build/
 .vscode/
-proxy-config.json
+data/
