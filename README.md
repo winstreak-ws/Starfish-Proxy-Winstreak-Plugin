@@ -91,24 +91,14 @@ All commands are used in-game via chat. Commands use module prefixes:
 Advanced cheater detection system with multiple behavioral checks:
 
 - `/anticheat config` - Show current anticheat configuration
-- `/anticheat debug` - Toggle debug mode
-- `/anticheat toggle <check_name>` - Enable/disable specific checks
-- `/anticheat sound <check_name>` - Toggle alert sounds for specific checks
-- `/anticheat vl <check_name> <level>` - Set violation level threshold
-- `/anticheat cooldown <check_name> <seconds>` - Set alert cooldown
-- `/anticheat info <check_name>` - Show detailed check information
-- `/anticheat reset <check_name>` - Reset check to default settings
 
-Available checks: `NoSlowA`, `AutoBlockA`, `RotationA`, `ScaffoldA`, `ScaffoldB`, `ScaffoldC`, `TowerA`
+Available checks: `NoSlowA`, `AutoBlockA`, `EagleA`, `ScaffoldA`, `ScaffoldB`, `TowerA`
 
 ### Denicker Commands
 
 Detects nicked (disguised) players by analyzing skin data:
 
 - `/denicker config` - Show current denicker configuration
-- `/denicker debug` - Toggle debug mode
-- `/denicker allnicks` - Toggle alerts for all detected nicks
-- `/denicker delay <milliseconds>` - Set alert delay
 
 ### Help System
 
@@ -140,16 +130,18 @@ Server changes made via `/proxy server` commands are automatically saved.
 
 ```
 starfish-proxy/
-├── src/                    # Core proxy files
-│   ├── proxy.js           # Main proxy server
-│   ├── auth.js            # Microsoft authentication
-│   ├── command-handler.js # Command processing
-│   └── plugin-manager.js  # Plugin system
-├── scripts/               # Plugin files
-│   ├── anticheat.js      # Anticheat system
-│   └── denicker.js       # Nick detection
-├── auth_cache/           # Authentication cache
-└── proxy-config.json     # Configuration file
+├── src/
+│   ├── proxy.js
+│   ├── session.js
+│   ├── command-handler.js
+│   ├── plugin-api.js
+│   └── storage.js
+├── scripts/
+│   ├── anticheat.js
+│   └── denicker.js
+├── data/
+│   └── config/
+└── auth_cache/
 ```
 
 ## Server Switching
@@ -173,10 +165,9 @@ Advanced behavioral analysis system that detects various cheating patterns:
 **Detection Types:**
 - **NoSlowA**: Detects sprinting while using items that should slow movement
 - **AutoBlockA**: Detects attacking while blocking with sword
-- **RotationA**: Detects impossible head/body rotations (invalid pitch values)
-- **ScaffoldA**: Detects diagonal double-shifting scaffold patterns
-- **ScaffoldB**: Detects blatant scaffold with fast movement and snappy rotations
-- **ScaffoldC**: Detects high-speed backward bridging with air time (keep-y behavior)
+- **EagleA**: Detects diagonal double-shifting scaffold patterns
+- **ScaffoldA**: Detects blatant scaffold with fast movement
+- **ScaffoldB**: Detects high-speed backward bridging with air time (keep-y behavior)
 - **TowerA**: Detects ascending faster than normal while placing blocks
 
 **Features:**
@@ -193,7 +184,7 @@ Detects nicked (disguised) players through skin data analysis:
 
 **Alert Format:**
 ```
-[Starfish-DN] BluePlayer is nicked as BlueRealName.
+[Starfish-DN] BlueRealName is nicked as BluePlayer.
 [Starfish-AC] RedPlayer flagged ScaffoldA (VL: 15)
 ```
 
@@ -208,48 +199,16 @@ module.exports = (proxyAPI) => {
     // Register plugin info
     proxyAPI.registerPlugin({
         name: 'MyPlugin',
-        displayName: '§eMyPlugin',
+        displayName: 'MyPlugin',
+        prefix: '§cMP'
         version: '1.0.0',
+        auther: 'Me'
         description: 'Custom plugin description'
     });
     
-    // Register commands
-    proxyAPI.registerCommands('myplugin', {
-        test: {
-            description: 'Test command',
-            handler: (client, args) => {
-                proxyAPI.sendChatMessage('Test successful!');
-            }
-        }
-    });
-    
-    // Event handlers
-    proxyAPI.on('playerJoin', ({ username, player }) => {
-        console.log(`Player ${username} joined`);
-    });
-    
-    proxyAPI.on('serverPacketMonitor', ({ username, player, data, meta }) => {
-        // Passive packet monitoring (zero latency)
-    });
-    
-    proxyAPI.on('serverPacketIntercept', ({ username, player, data, meta }) => {
-        // Can cancel packets: event.cancelled = true
-    });
-    
+    // TODO
 };
 ```
-
-### Available Events
-- `playerJoin` / `playerLeave` - Player connection events
-- `serverPacketMonitor` / `clientPacketMonitor` - Passive packet monitoring
-- `serverPacketIntercept` / `clientPacketIntercept` - Packet interception (can cancel)
-
-### Plugin Utilities
-- `proxyAPI.sendChatMessage(message)` - Send chat to current player
-- `proxyAPI.sendToClient(packet, data)` - Send packet to client
-- `proxyAPI.sendToServer(packet, data)` - Send packet to server
-- `proxyAPI.currentPlayer` - Access current player object
-- `proxyAPI.proxyPrefix` / `proxyAPI.proxyName` - Consistent branding
 
 ## Authentication
 
