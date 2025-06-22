@@ -16,8 +16,10 @@ A personal Minecraft proxy server with Microsoft authentication, dynamic server 
 #### Anticheat
 **Chat alerts for blatant cheaters**
 - Rewrite all checks
-- Certainty Threshild
-- /wdr command in chat for players who flag past a certain threshold
+- Certainty threshold
+   - Automatic blacklisting with Urchin plugin
+   - Automatic /wdr button in chat
+   - If Urchin is not installed, just add an icon to their display name
 
 #### Urchin
 **Integration with Urchin API, including automatic blacklisting, client tags and cheater gtags displayed next to player names, and more**
