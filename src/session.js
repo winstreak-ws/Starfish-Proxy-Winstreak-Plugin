@@ -27,17 +27,12 @@ class GameState {
         this.teams = new Map();
         this.entities = new Map();
         this.entityIdToUuid = new Map();
+        this.uuidToEntityId = new Map();
         this.scoreboards = new Map();
-        this.inventory = {
-            slots: new Array(46).fill(null),
-            heldItemSlot: 0
-        };
         this.position = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
-        this.gameMode = 0;
+        this.lastPosition = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
         this.health = 20;
-        this.food = 20;
-        this.saturation = 5;
-        this.experience = { level: 0, progress: 0, total: 0 };
+        this.inventory = { slots: new Array(46).fill(null), heldItemSlot: 0 };
     }
 
     updateFromPacket(meta, data, fromServer) {
@@ -48,6 +43,7 @@ class GameState {
                     break;
                 case 'position':
                 case 'position_look':
+                    this.lastPosition = { ...this.position };
                     this.position.x = data.x;
                     this.position.y = data.y;
                     this.position.z = data.z;
@@ -89,20 +85,38 @@ class GameState {
                 break;
                 
             case 'named_entity_spawn':
-                this.entities.set(data.entityId, {
+                const newEntity = {
                     type: 'player',
                     uuid: data.playerUUID,
                     name: null,
                     position: { x: data.x / 32, y: data.y / 32, z: data.z / 32 },
+                    lastPosition: { x: data.x / 32, y: data.y / 32, z: data.z / 32 },
                     yaw: this.byteToYaw(data.yaw),
                     pitch: this.byteToPitch(data.pitch),
                     onGround: true,
                     isCrouching: false,
                     isSprinting: false,
                     isUsingItem: false,
+                    isOnFire: false,
                     heldItem: null,
-                    equipment: {}
-                });
+                    equipment: {},
+                    metadata: data.metadata || [],
+                    effects: new Map(),
+                    lastDamaged: 0,
+                    health: 20
+                };
+
+                const initialFlags = newEntity.metadata.find(m => m.key === 0)?.value || 0;
+                newEntity.isOnFire = (initialFlags & 0x01) !== 0;
+                newEntity.isCrouching = (initialFlags & 0x02) !== 0;
+                newEntity.isSprinting = (initialFlags & 0x08) !== 0;
+                newEntity.isUsingItem = (initialFlags & 0x10) !== 0;
+                
+                const healthMeta = newEntity.metadata.find(m => m.key === 6);
+                if (healthMeta) newEntity.health = healthMeta.value;
+
+                this.uuidToEntityId.set(data.playerUUID, data.entityId);
+                this.entities.set(data.entityId, newEntity);
                 this.entityIdToUuid.set(data.entityId, data.playerUUID);
                 break;
                 
@@ -118,6 +132,10 @@ class GameState {
             case 'entity_destroy':
                 if (Array.isArray(data.entityIds)) {
                     data.entityIds.forEach(id => {
+                        const uuid = this.entityIdToUuid.get(id);
+                        if (uuid) {
+                            this.uuidToEntityId.delete(uuid);
+                        }
                         this.entities.delete(id);
                         this.entityIdToUuid.delete(id);
                     });
@@ -130,6 +148,7 @@ class GameState {
             case 'entity_teleport':
                 if (this.entities.has(data.entityId)) {
                     const entity = this.entities.get(data.entityId);
+                    entity.lastPosition = { ...entity.position };
                     if (meta.name === 'entity_teleport') {
                         entity.position = { x: data.x / 32, y: data.y / 32, z: data.z / 32 };
                         entity.yaw = this.byteToYaw(data.yaw);
@@ -150,9 +169,22 @@ class GameState {
             case 'entity_metadata':
                 if (this.entities.has(data.entityId)) {
                     const entity = this.entities.get(data.entityId);
-                    entity.metadata = data.metadata;
+                    if (!entity.metadata) entity.metadata = [];
                     
-                    const flags = data.metadata?.find(m => m.key === 0)?.value || 0;
+                    data.metadata.forEach(newMeta => {
+                        const index = entity.metadata.findIndex(m => m.key === newMeta.key);
+                        if (index !== -1) {
+                            entity.metadata[index] = newMeta;
+                        } else {
+                            entity.metadata.push(newMeta);
+                        }
+                        if (newMeta.key === 6) {
+                            entity.health = newMeta.value;
+                        }
+                    });
+                    
+                    const flags = entity.metadata.find(m => m.key === 0)?.value || 0;
+                    entity.isOnFire = (flags & 0x01) !== 0;
                     entity.isCrouching = (flags & 0x02) !== 0;
                     entity.isSprinting = (flags & 0x08) !== 0;
                     entity.isUsingItem = (flags & 0x10) !== 0;
@@ -179,6 +211,31 @@ class GameState {
             case 'window_items':
                 if (data.windowId === 0) {
                     this.inventory.slots = data.items.slice(0, 46);
+                }
+                break;
+                
+            case 'entity_effect':
+                if (this.entities.has(data.entityId)) {
+                    const entity = this.entities.get(data.entityId);
+                    entity.effects.set(data.effectId, {
+                        amplifier: data.amplifier,
+                        duration: data.duration,
+                        hideParticles: data.hideParticles
+                    });
+                }
+                break;
+
+            case 'remove_entity_effect':
+                if (this.entities.has(data.entityId)) {
+                    const entity = this.entities.get(data.entityId);
+                    entity.effects.delete(data.effectId);
+                }
+                break;
+            
+            case 'entity_status':
+                if (data.entityStatus === 2 && this.entities.has(data.entityId)) {
+                    const entity = this.entities.get(data.entityId);
+                    entity.lastDamaged = Date.now();
                 }
                 break;
                 
@@ -377,10 +434,14 @@ class PlayerSession {
         this.client = client;
         this.targetClient = null;
         this.username = client.username;
+        this.uuid = client.uuid;
         this.gameState = new GameState();
         this.connected = false;
         this.forceReauth = proxy.currentPlayer?.forceReauth || false;
         this.tickInterval = null;
+        
+        // get reference to PlayerManager from PluginAPI
+        this.playerManager = proxy.pluginAPI.playerManager;
 
         this.connect();
     }
@@ -523,6 +584,16 @@ class PlayerSession {
         });
 
         this.tickInterval = setInterval(() => {
+            // update PlayerManager with current GameState
+            if (this.playerManager && this.gameState) {
+                this.playerManager.updateFromGameState(this.gameState);
+            }
+            
+            // tick PlayerManager
+            if (this.playerManager) {
+                this.playerManager.tick();
+            }
+            
             this.proxy.pluginAPI.emit('tick');
         }, 50);
     }
@@ -534,6 +605,9 @@ class PlayerSession {
             return this.proxy.commandHandler.handleCommand(data.message, this.client);
         }
         
+        // notify PlayerManager of client-side player actions
+        const selfUuid = this.uuid;
+        
         switch (meta.name) {
             case 'position':
                 this.proxy.pluginAPI.emit('playerMove', {
@@ -542,6 +616,12 @@ class PlayerSession {
                     onGround: data.onGround,
                     rotation: undefined
                 });
+                if (this.playerManager && selfUuid) {
+                    this.playerManager.notifyPlayerUpdate(selfUuid, 'movement', {
+                        position: { x: data.x, y: data.y, z: data.z },
+                        onGround: data.onGround
+                    });
+                }
                 break;
             case 'position_look':
                 this.proxy.pluginAPI.emit('playerMove', {
@@ -550,6 +630,13 @@ class PlayerSession {
                     onGround: data.onGround,
                     rotation: { yaw: data.yaw, pitch: data.pitch }
                 });
+                if (this.playerManager && selfUuid) {
+                    this.playerManager.notifyPlayerUpdate(selfUuid, 'movement', {
+                        position: { x: data.x, y: data.y, z: data.z },
+                        onGround: data.onGround,
+                        rotation: { yaw: data.yaw, pitch: data.pitch }
+                    });
+                }
                 break;
             case 'look':
                 this.proxy.pluginAPI.emit('playerMove', {
@@ -558,19 +645,54 @@ class PlayerSession {
                     onGround: data.onGround,
                     rotation: { yaw: data.yaw, pitch: data.pitch }
                 });
+                if (this.playerManager && selfUuid) {
+                    this.playerManager.notifyPlayerUpdate(selfUuid, 'movement', {
+                        position: { ...this.gameState.position },
+                        onGround: data.onGround,
+                        rotation: { yaw: data.yaw, pitch: data.pitch }
+                    });
+                }
                 break;
             case 'arm_animation':
                 this.proxy.pluginAPI.emit('playerSwing', { player: this });
+                if (this.playerManager && selfUuid) {
+                    this.playerManager.notifyPlayerUpdate(selfUuid, 'action', { type: 'swing' });
+                }
                 break;
             case 'entity_action':
-                if (data.actionId === 0) this.proxy.pluginAPI.emit('playerCrouch', { player: this, crouching: true });
-                else if (data.actionId === 1) this.proxy.pluginAPI.emit('playerCrouch', { player: this, crouching: false });
-                else if (data.actionId === 3) this.proxy.pluginAPI.emit('playerSprint', { player: this, sprinting: true });
-                else if (data.actionId === 4) this.proxy.pluginAPI.emit('playerSprint', { player: this, sprinting: false });
+                if (data.actionId === 0) {
+                    this.proxy.pluginAPI.emit('playerCrouch', { player: this, crouching: true });
+                    if (this.playerManager && selfUuid) {
+                        this.playerManager.notifyPlayerUpdate(selfUuid, 'action', { type: 'crouch', value: true });
+                    }
+                } else if (data.actionId === 1) {
+                    this.proxy.pluginAPI.emit('playerCrouch', { player: this, crouching: false });
+                    if (this.playerManager && selfUuid) {
+                        this.playerManager.notifyPlayerUpdate(selfUuid, 'action', { type: 'crouch', value: false });
+                    }
+                } else if (data.actionId === 3) {
+                    this.proxy.pluginAPI.emit('playerSprint', { player: this, sprinting: true });
+                    if (this.playerManager && selfUuid) {
+                        this.playerManager.notifyPlayerUpdate(selfUuid, 'action', { type: 'sprint', value: true });
+                    }
+                } else if (data.actionId === 4) {
+                    this.proxy.pluginAPI.emit('playerSprint', { player: this, sprinting: false });
+                    if (this.playerManager && selfUuid) {
+                        this.playerManager.notifyPlayerUpdate(selfUuid, 'action', { type: 'sprint', value: false });
+                    }
+                }
                 break;
             case 'block_place':
                 this.proxy.pluginAPI.emit('playerUseItem', { player: this, using: true });
-                setTimeout(() => this.proxy.pluginAPI.emit('playerUseItem', { player: this, using: false }), 500);
+                if (this.playerManager && selfUuid) {
+                    this.playerManager.notifyPlayerUpdate(selfUuid, 'action', { type: 'useItem', value: true });
+                }
+                setTimeout(() => {
+                    this.proxy.pluginAPI.emit('playerUseItem', { player: this, using: false });
+                    if (this.playerManager && selfUuid) {
+                        this.playerManager.notifyPlayerUpdate(selfUuid, 'action', { type: 'useItem', value: false });
+                    }
+                }, 500);
                 break;
             case 'held_item_slot':
                 this.proxy.pluginAPI.emit('playerHeldItemChange', { player: this, slot: data.slotId });
@@ -617,15 +739,22 @@ class PlayerSession {
             const entity = this.gameState.entities.get(data.entityId);
             if (!entity) return;
             
+            // notify PlayerManager of other player updates
             switch(meta.name) {
                 case 'rel_entity_move':
                 case 'entity_look':
                 case 'entity_look_and_move':
                 case 'entity_teleport':
-                    if (entity.position) {
+                    if (entity.position && this.playerManager) {
                         const rotation = (meta.name === 'entity_look' || meta.name === 'entity_look_and_move' || meta.name === 'entity_teleport') 
                             ? { yaw: entity.yaw || 0, pitch: entity.pitch || 0 }
                             : undefined;
+                        
+                        this.playerManager.notifyPlayerUpdate(entityPlayer.uuid, 'movement', {
+                            position: { ...entity.position },
+                            onGround: entity.onGround !== undefined ? entity.onGround : true,
+                            rotation: rotation
+                        });
                         
                         this.proxy.pluginAPI.emit('playerMove', { 
                             player: { 
@@ -641,7 +770,9 @@ class PlayerSession {
                     }
                     break;
                 case 'animation':
-                    if (data.animation === 0) {
+                    if (data.animation === 0 && this.playerManager) {
+                        this.playerManager.notifyPlayerUpdate(entityPlayer.uuid, 'action', { type: 'swing' });
+                        
                         this.proxy.pluginAPI.emit('playerSwing', { 
                             player: { 
                                 username: entityPlayer.name, 
@@ -653,6 +784,23 @@ class PlayerSession {
                     }
                     break;
                 case 'entity_metadata':
+                    if (this.playerManager) {
+                        this.playerManager.notifyPlayerUpdate(entityPlayer.uuid, 'action', { 
+                            type: 'crouch', 
+                            value: entity.isCrouching || false 
+                        });
+                        this.playerManager.notifyPlayerUpdate(entityPlayer.uuid, 'action', { 
+                            type: 'sprint', 
+                            value: entity.isSprinting || false 
+                        });
+                        if (entity.isUsingItem !== undefined) {
+                            this.playerManager.notifyPlayerUpdate(entityPlayer.uuid, 'action', { 
+                                type: 'useItem', 
+                                value: entity.isUsingItem 
+                            });
+                        }
+                    }
+                    
                     this.proxy.pluginAPI.emit('playerCrouch', { 
                         player: { 
                             username: entityPlayer.name, 
@@ -684,6 +832,15 @@ class PlayerSession {
                     }
                     break;
                 case 'entity_equipment':
+                    if (this.playerManager) {
+                        const equipment = {};
+                        equipment[data.slot] = data.item;
+                        this.playerManager.notifyPlayerUpdate(entityPlayer.uuid, 'equipment', {
+                            equipment: equipment,
+                            heldItem: data.slot === 0 ? data.item : undefined
+                        });
+                    }
+                    
                     this.proxy.pluginAPI.emit('playerHeldItemChange', { 
                         player: { 
                             username: entityPlayer.name, 
@@ -694,6 +851,22 @@ class PlayerSession {
                         item: data.item,
                         slot: data.slot
                     });
+                    break;
+                case 'entity_status':
+                    if (data.entityStatus === 2 && this.playerManager) {
+                        this.playerManager.notifyPlayerUpdate(entityPlayer.uuid, 'health', {
+                            health: entity.health || 20
+                        });
+                    }
+                    break;
+                case 'entity_effect':
+                case 'remove_entity_effect':
+                    if (this.playerManager) {
+                        const effects = new Map(entity.effects || []);
+                        this.playerManager.notifyPlayerUpdate(entityPlayer.uuid, 'effects', {
+                            effects: effects
+                        });
+                    }
                     break;
             }
         }

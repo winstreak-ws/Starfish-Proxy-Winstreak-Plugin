@@ -4,7 +4,7 @@ const fs = require('fs');
 
 const { PlayerSession } = require('./session');
 const { CommandHandler } = require('./command-handler');
-const { PluginAPI } = require('./plugin-api');
+const PluginAPI = require('./plugin-api');
 const { Storage } = require('./storage');
 
 const PROXY_VERSION = '1.8.9';
@@ -73,6 +73,7 @@ class MinecraftProxy {
             console.log(`Client ${client.username} disconnected`);
             if (this.currentPlayer) {
                 this.currentPlayer.disconnect('Client disconnected from proxy.');
+                this.currentPlayer = null;
             }
         });
         
@@ -80,6 +81,7 @@ class MinecraftProxy {
             console.log(`Client ${client.username} error: ${err.message}`);
             if (this.currentPlayer) {
                 this.currentPlayer.disconnect(`Client error: ${err.message}`);
+                this.currentPlayer = null;
             }
         });
         
@@ -90,13 +92,22 @@ class MinecraftProxy {
         const now = Date.now();
         const attempts = this.loginAttempts.get(username) || { count: 0, lastAttempt: 0 };
         
-        if (now - attempts.lastAttempt > 20000) attempts.count = 0;
-        if (attempts.count >= 2 && now - attempts.lastAttempt < 20000) return true;
+        // Reset count if it's been more than 20 seconds
+        if (now - attempts.lastAttempt > 20000) {
+            attempts.count = 0;
+        }
         
+        // Check if we should reject (before incrementing)
+        if (attempts.count >= 2 && now - attempts.lastAttempt < 20000) {
+            return true;
+        }
+        
+        // Only increment if we're allowing the connection
         attempts.count++;
         attempts.lastAttempt = now;
         this.loginAttempts.set(username, attempts);
         
+        // Cleanup old entries
         for (const [user, data] of this.loginAttempts.entries()) {
             if (now - data.lastAttempt > 60000) {
                 this.loginAttempts.delete(user);

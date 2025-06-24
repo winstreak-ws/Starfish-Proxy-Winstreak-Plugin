@@ -2,6 +2,7 @@ const EventEmitter = require('events');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const PlayerManager = require('./player-manager');
 
 function getProperty(obj, path) {
     if (obj === undefined || obj === null) return undefined;
@@ -28,7 +29,33 @@ class PluginAPI extends EventEmitter {
         this.eventChains = new Map();
         this.customDisplayNames = new Map();
         
+        // create the PlayerManager for stateful player tracking
+        this.playerManager = new PlayerManager();
+        
+        // connect PlayerManager events to plugin events
+        this.playerManager.on('player.join', (player) => this.emit('player.join', player));
+        this.playerManager.on('player.leave', (player) => this.emit('player.leave', player));
+        this.playerManager.on('player.move', (player) => this.emit('player.move', player));
+        this.playerManager.on('player.action', (player, action) => this.emit('player.action', player, action));
+        this.playerManager.on('player.equipment', (player) => this.emit('player.equipment', player));
+        
         this.scriptsDir = path.join(proxy.getBaseDir(), 'scripts');
+        
+        // compatibility mappings for old event names
+        this.compatibilityMap = {
+            'playerJoin': 'player.join',
+            'playerLeave': 'player.leave',
+            'playerMove': 'player.move',
+            'playerSwing': 'player.action',
+            'playerCrouch': 'player.action',
+            'playerSprint': 'player.action',
+            'playerUseItem': 'player.action',
+            'playerHeldItemChange': 'player.equipment',
+            'playerSpawn': 'player.join',
+            'playerDespawn': 'player.leave',
+            'teamUpdate': 'team.update',
+            'playerRespawn': 'player.respawn'
+        };
     }
     
     loadPlugins() {
@@ -73,6 +100,85 @@ class PluginAPI extends EventEmitter {
         const self = this;
 
         const api = {
+            // simplified API surface
+            get players() {
+                return self.playerManager.getAllPlayers();
+            },
+            
+            getPlayer(uuid) {
+                return self.playerManager.getPlayer(uuid);
+            },
+            
+            config: {
+                get: (key) => {
+                    const plugin = self.plugins.get(moduleName.toLowerCase());
+                    if (!plugin) return undefined;
+                    
+                    // support dot notation
+                    return key.split('.').reduce((obj, k) => obj?.[k], plugin.config);
+                },
+                
+                set: (key, value) => {
+                    const plugin = self.plugins.get(moduleName.toLowerCase());
+                    if (!plugin) return;
+                    
+                    // support dot notation
+                    const keys = key.split('.');
+                    const lastKey = keys.pop();
+                    const target = keys.reduce((obj, k) => {
+                        if (!obj[k]) obj[k] = {};
+                        return obj[k];
+                    }, plugin.config);
+                    
+                    target[lastKey] = value;
+                    self.savePluginConfig(moduleName.toLowerCase());
+                }
+            },
+            
+            chat: (message) => {
+                if (self.proxy.currentPlayer?.client) {
+                    self.proxy.sendMessage(self.proxy.currentPlayer.client, message);
+                }
+            },
+            
+            sound: (name, options = {}) => {
+                if (self.proxy.currentPlayer?.client?.state === 3) {
+                    const pos = options.position || self.proxy.currentPlayer.gameState.position;
+                    self.proxy.currentPlayer.client.write('named_sound_effect', {
+                        soundName: name,
+                        x: Math.round(pos.x * 8),
+                        y: Math.round(pos.y * 8),
+                        z: Math.round(pos.z * 8),
+                        volume: options.volume || 1,
+                        pitch: options.pitch || 63
+                    });
+                }
+            },
+            
+            everyTick: (callback) => {
+                self.registerEventHandler(moduleName.toLowerCase(), 'tick', callback);
+            },
+            
+            on: (event, callback) => {
+                // check for compatibility mapping
+                const mappedEvent = self.compatibilityMap[event] || event;
+                
+                // special handling for legacy events that need transformation
+                if (event in self.compatibilityMap) {
+                    const wrappedCallback = self.createCompatibilityWrapper(event, callback);
+                    self.registerEventHandler(moduleName.toLowerCase(), mappedEvent, wrappedCallback);
+                } else {
+                    self.registerEventHandler(moduleName.toLowerCase(), mappedEvent, callback);
+                }
+            },
+            
+            log: (message) => {
+                const plugin = self.plugins.get(moduleName.toLowerCase());
+                const prefix = plugin?.metadata.displayName || moduleName;
+                console.log(`[${prefix}] ${message}`);
+            },
+            
+            // legacy compatibility methods
             metadata: (info) => {
                 const normalizedInfo = {
                     name: info.name || pluginNameFromFile,
@@ -119,15 +225,11 @@ class PluginAPI extends EventEmitter {
                 return api;
             },
             
-            on: (event, handler, options = {}) => {
-                self.registerEventHandler(moduleName.toLowerCase(), event, handler, options);
-                return api;
-            },
-            
             store: () => {
                 return self.proxy.storage.getPluginStore(moduleName.toLowerCase());
             },
             
+            // legacy getters
             get player() {
                 return self.proxy.currentPlayer;
             },
@@ -137,15 +239,14 @@ class PluginAPI extends EventEmitter {
             },
             
             getPlayers: () => {
-                if (!self.proxy.currentPlayer?.gameState) return [];
-                const players = [];
-                for (const [uuid, info] of self.proxy.currentPlayer.gameState.playerInfo) {
-                    players.push({
-                        uuid,
-                        ...info
-                    });
-                }
-                return players;
+                // return legacy format for compatibility
+                return self.playerManager.getAllPlayers().map(player => ({
+                    uuid: player.uuid,
+                    entityId: player.entityId,
+                    name: player.name,
+                    displayName: player.displayName,
+                    ping: player.ping
+                }));
             },
 
             getTeams: () => {
@@ -153,30 +254,13 @@ class PluginAPI extends EventEmitter {
             },
             
             getPlayerTeam: (playerName) => {
-                if (!self.proxy.currentPlayer?.gameState) return null;
-                const cleanPlayerName = playerName.replace(/§./g, '');
-                return self.proxy.currentPlayer.gameState.getPlayerTeam(cleanPlayerName);
+                const player = self.playerManager.getPlayerByName(playerName);
+                return player?.team || null;
             },
             
-            sendChat: (message) => {
-                if (self.proxy.currentPlayer?.client) {
-                    self.proxy.sendMessage(self.proxy.currentPlayer.client, message);
-                }
-            },
+            sendChat: (message) => api.chat(message),
             
-            playSound: (soundName, options = {}) => {
-                if (self.proxy.currentPlayer?.client?.state === 3) {
-                    const pos = options.position || self.proxy.currentPlayer.gameState.position;
-                    self.proxy.currentPlayer.client.write('named_sound_effect', {
-                        soundName: soundName,
-                        x: Math.round(pos.x * 8),
-                        y: Math.round(pos.y * 8),
-                        z: Math.round(pos.z * 8),
-                        volume: options.volume || 1,
-                        pitch: options.pitch || 63
-                    });
-                }
-            },
+            playSound: (soundName, options) => api.sound(soundName, options),
 
             updatePlayerList: (uuid, displayName) => {
                 if (self.proxy.currentPlayer?.client?.state === 'play') {
@@ -189,22 +273,8 @@ class PluginAPI extends EventEmitter {
                 }
             },
             
-            createInventory: (title, slots = 54) => {
-                return new VirtualInventory(self.proxy.currentPlayer, title, slots);
-            },
-            
-            createScoreboard: (name, displayName) => {
-                return new VirtualScoreboard(self.proxy.currentPlayer, name, displayName);
-            },
-            
             clearAllCustomDisplayNames: () => {
                 self.customDisplayNames.clear();
-            },
-            
-            log: (message) => {
-                const plugin = self.plugins.get(moduleName.toLowerCase());
-                const prefix = plugin?.metadata.displayName || moduleName;
-                console.log(`[${prefix}] ${message}`);
             },
 
             debugLog: (message) => {
@@ -239,6 +309,136 @@ class PluginAPI extends EventEmitter {
         return api;
     }
     
+    // create compatibility wrapper for old event format
+    createCompatibilityWrapper(oldEvent, callback) {
+        const self = this;
+        
+        switch (oldEvent) {
+            case 'playerMove':
+                return (player) => {
+                    callback({
+                        player: {
+                            username: player.name,
+                            uuid: player.uuid,
+                            entityId: player.entityId,
+                            displayName: player.displayName,
+                            gameState: self.proxy.currentPlayer?.gameState
+                        },
+                        position: player.position,
+                        onGround: player.onGround,
+                        rotation: player.rotation
+                    });
+                };
+                
+            case 'playerSwing':
+                return (player, action) => {
+                    if (action?.type === 'swing') {
+                        callback({
+                            player: {
+                                username: player.name,
+                                uuid: player.uuid,
+                                entityId: player.entityId,
+                                displayName: player.displayName
+                            }
+                        });
+                    }
+                };
+                
+            case 'playerCrouch':
+                return (player, action) => {
+                    if (action?.type === 'crouch') {
+                        callback({
+                            player: {
+                                username: player.name,
+                                uuid: player.uuid,
+                                entityId: player.entityId,
+                                displayName: player.displayName
+                            },
+                            crouching: action.value
+                        });
+                    }
+                };
+                
+            case 'playerSprint':
+                return (player, action) => {
+                    if (action?.type === 'sprint') {
+                        callback({
+                            player: {
+                                username: player.name,
+                                uuid: player.uuid,
+                                entityId: player.entityId,
+                                displayName: player.displayName
+                            },
+                            sprinting: action.value
+                        });
+                    }
+                };
+                
+            case 'playerUseItem':
+                return (player, action) => {
+                    if (action?.type === 'useItem') {
+                        callback({
+                            player: {
+                                username: player.name,
+                                uuid: player.uuid,
+                                entityId: player.entityId,
+                                displayName: player.displayName
+                            },
+                            using: action.value
+                        });
+                    }
+                };
+                
+            case 'playerHeldItemChange':
+                return (player) => {
+                    callback({
+                        player: {
+                            username: player.name,
+                            uuid: player.uuid,
+                            entityId: player.entityId,
+                            displayName: player.displayName
+                        },
+                        slot: 0, // default slot for compatibility
+                        item: player.heldItem
+                    });
+                };
+                
+            case 'playerJoin':
+            case 'playerSpawn':
+                return (player) => {
+                    callback({
+                        player: {
+                            username: player.name,
+                            uuid: player.uuid,
+                            entityId: player.entityId,
+                            displayName: player.displayName,
+                            gameState: self.proxy.currentPlayer?.gameState
+                        },
+                        uuid: player.uuid,
+                        name: player.name
+                    });
+                };
+                
+            case 'playerLeave':
+            case 'playerDespawn':
+                return (player) => {
+                    callback({
+                        player: {
+                            username: player.name,
+                            uuid: player.uuid,
+                            entityId: player.entityId,
+                            displayName: player.displayName
+                        },
+                        uuid: player.uuid,
+                        name: player.name
+                    });
+                };
+                
+            default:
+                return callback;
+        }
+    }
+    
     registerPlugin(metadata) {
         const name = metadata.name.toLowerCase();
         
@@ -268,7 +468,7 @@ class PluginAPI extends EventEmitter {
         }
     }
     
-    registerEventHandler(pluginName, event, handler, options) {
+    registerEventHandler(pluginName, event, handler, options = {}) {
         if (!this.pluginEventHandlers.has(pluginName)) {
             this.pluginEventHandlers.set(pluginName, new Map());
         }
@@ -306,15 +506,21 @@ class PluginAPI extends EventEmitter {
         this.eventChains.set(event, allHandlers);
     }
     
-    emit(event, data) {
+    emit(event, ...args) {
         const chain = this.eventChains.get(event) || [];
+        
+        // also emit compatibility events if needed
+        const legacyEvent = Object.entries(this.compatibilityMap).find(([old, mapped]) => mapped === event)?.[0];
+        if (legacyEvent) {
+            super.emit(legacyEvent, ...args);
+        }
         
         for (const handlerInfo of chain) {
             const plugin = this.plugins.get(handlerInfo.pluginName);
             if (!plugin || !plugin.enabled) continue;
             
             try {
-                handlerInfo.handler(data);
+                handlerInfo.handler(...args);
             } catch (err) {
                 console.error(`Error in ${handlerInfo.pluginName} handler for ${event}:`, err);
             }
@@ -455,145 +661,4 @@ class PluginAPI extends EventEmitter {
     }
 }
 
-class VirtualInventory {
-    constructor(player, title, size) {
-        this.player = player;
-        this.title = title;
-        this.size = size;
-        this.windowId = 100 + Math.floor(Math.random() * 50);
-        this.slots = new Array(size).fill(null);
-        this.clickHandlers = new Map();
-    }
-    
-    setItem(slot, item, clickHandler = null) {
-        this.slots[slot] = item;
-        if (clickHandler) {
-            this.clickHandlers.set(slot, clickHandler);
-        }
-        return this;
-    }
-    
-    open() {
-        if (!this.player?.client) return;
-        
-        this.player.client.write('open_window', {
-            windowId: this.windowId,
-            inventoryType: 'minecraft:chest',
-            windowTitle: JSON.stringify({ text: this.title }),
-            slotCount: this.size
-        });
-        
-        this.player.client.write('window_items', {
-            windowId: this.windowId,
-            items: this.slots
-        });
-        
-        const originalHandler = this.player.client._events.window_click;
-        this.player.client.on('window_click', (data) => {
-            if (data.windowId === this.windowId) {
-                const handler = this.clickHandlers.get(data.slot);
-                if (handler) {
-                    handler(data.slot, data);
-                }
-                
-                this.player.client.write('set_slot', {
-                    windowId: -1,
-                    slot: -1,
-                    item: null
-                });
-                
-                this.player.client.write('confirm_transaction', {
-                    windowId: this.windowId,
-                    action: data.action,
-                    accepted: false
-                });
-                
-                return;
-            }
-            if (originalHandler) originalHandler(data);
-        });
-        
-        return this;
-    }
-    
-    close() {
-        if (this.player?.client) {
-            this.player.client.write('close_window', {
-                windowId: this.windowId
-            });
-        }
-    }
-}
-
-class VirtualScoreboard {
-    constructor(player, name, displayName) {
-        this.player = player;
-        this.name = name;
-        this.displayName = displayName;
-        this.scores = new Map();
-        this.created = false;
-    }
-    
-    create(position = 1) {
-        if (!this.player?.client || this.created) return this;
-        
-        this.player.client.write('scoreboard_objective', {
-            name: this.name,
-            action: 0,
-            displayText: this.displayName,
-            type: 'integer'
-        });
-        
-        this.player.client.write('scoreboard_display_objective', {
-            position: position,
-            name: this.name
-        });
-        
-        this.created = true;
-        return this;
-    }
-    
-    setScore(entry, value) {
-        if (!this.player?.client || !this.created) return this;
-        
-        this.scores.set(entry, value);
-        
-        this.player.client.write('scoreboard_score', {
-            scoreName: entry,
-            action: 0,
-            objective: this.name,
-            value: value
-        });
-        
-        return this;
-    }
-    
-    removeScore(entry) {
-        if (!this.player?.client || !this.created) return this;
-        
-        this.scores.delete(entry);
-        
-        this.player.client.write('scoreboard_score', {
-            scoreName: entry,
-            action: 1,
-            objective: this.name,
-            value: 0
-        });
-        
-        return this;
-    }
-    
-    destroy() {
-        if (!this.player?.client || !this.created) return;
-        
-        this.player.client.write('scoreboard_objective', {
-            name: this.name,
-            action: 1
-        });
-        
-        this.created = false;
-        this.scores.clear();
-    }
-}
-
-module.exports = { PluginAPI };
+module.exports = PluginAPI;
