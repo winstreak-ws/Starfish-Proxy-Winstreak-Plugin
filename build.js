@@ -21,20 +21,44 @@ if (!fs.existsSync(buildDir)) {
     fs.mkdirSync(buildDir);
 }
 
-const scriptsSource = path.join(__dirname, 'scripts');
-const scriptsDest = path.join(buildDir, 'scripts');
+const pluginsSource = path.join(__dirname, 'plugins');
+const pluginsDest = path.join(buildDir, 'plugins');
 
-if (fs.existsSync(scriptsSource)) {
-    if (fs.existsSync(scriptsDest)) {
-        fs.rmSync(scriptsDest, { recursive: true, force: true });
+if (fs.existsSync(pluginsSource)) {
+    if (fs.existsSync(pluginsDest)) {
+        fs.rmSync(pluginsDest, { recursive: true, force: true });
     }
-    fs.cpSync(scriptsSource, scriptsDest, { recursive: true });
+    fs.cpSync(pluginsSource, pluginsDest, { recursive: true });
 }
 
-const configSource = path.join(__dirname, 'proxy-config.json');
-const configDest = path.join(buildDir, 'proxy-config.json');
+const configSource = path.join(__dirname, 'config');
+const configDest = path.join(buildDir, 'config');
+
 if (fs.existsSync(configSource)) {
-    fs.copyFileSync(configSource, configDest);
+    if (fs.existsSync(configDest)) {
+        fs.rmSync(configDest, { recursive: true, force: true });
+    }
+    fs.cpSync(configSource, configDest, { recursive: true });
+}
+
+const dataSource = path.join(__dirname, 'data');
+const dataDest = path.join(buildDir, 'data');
+
+if (fs.existsSync(dataSource)) {
+    if (fs.existsSync(dataDest)) {
+        fs.rmSync(dataDest, { recursive: true, force: true });
+    }
+    fs.cpSync(dataSource, dataDest, { recursive: true });
+}
+
+const authCacheSource = path.join(__dirname, 'auth_cache');
+const authCacheDest = path.join(buildDir, 'auth_cache');
+
+if (fs.existsSync(authCacheSource)) {
+    if (fs.existsSync(authCacheDest)) {
+        fs.rmSync(authCacheDest, { recursive: true, force: true });
+    }
+    fs.cpSync(authCacheSource, authCacheDest, { recursive: true });
 }
 
 try {

@@ -90,7 +90,7 @@ All commands are used in-game via chat. Commands use module prefixes:
 
 Advanced cheater detection system with multiple behavioral checks:
 
-- `/anticheat config` - Show current anticheat configuration
+- `/anticheat config` - Interactive config menu with enable/disable, debug, and all anticheat settings
 
 Available checks: `NoSlowA`, `AutoBlockA`, `EagleA`, `ScaffoldA`, `ScaffoldB`, `TowerA`
 
@@ -98,11 +98,13 @@ Available checks: `NoSlowA`, `AutoBlockA`, `EagleA`, `ScaffoldA`, `ScaffoldB`, `
 
 Detects nicked (disguised) players by analyzing skin data:
 
-- `/denicker config` - Show current denicker configuration
+- `/denicker config` - Interactive config menu with enable/disable, debug, and denicker settings
 
-### Help System
+### Help & Config System
 
-Each module supports `/help` commands:
+Each plugin automatically gets standardized help and config commands:
+- `/plugin-name help` - Show all commands with pagination
+- `/plugin-name config` - Interactive config menu with pagination
 - `/proxy help` - Show proxy commands
 - `/anticheat help` - Show anticheat commands  
 - `/denicker help` - Show denicker commands
@@ -192,23 +194,189 @@ Detects nicked (disguised) players through skin data analysis:
 
 The proxy supports custom plugins placed in the `scripts/` directory. Each `.js` file is automatically loaded.
 
-Basic plugin structure:
+### Basic Plugin Structure
 
 ```javascript
-module.exports = (proxyAPI) => {
-    // Register plugin info
-    proxyAPI.registerPlugin({
-        name: 'MyPlugin',
-        displayName: 'MyPlugin',
-        prefix: '§cMP'
+module.exports = (api) => {
+    // register plugin metadata (this is all that's required!)
+    api.metadata({
+        name: 'my-plugin',
+        displayName: 'My Plugin',
+        prefix: '§cMP',
         version: '1.0.0',
-        auther: 'Me'
-        description: 'Custom plugin description'
+        author: 'Your Name',
+        description: 'Plugin description'
     });
     
-    // TODO
+    // optionally define config schema for plugin-specific settings
+    api.configSchema([
+        {
+            label: 'My Plugin Settings',
+            settings: [
+                {
+                    key: 'myFeature.enabled',
+                    type: 'toggle',
+                    description: 'Enable my custom feature'
+                }
+            ],
+            defaults: {
+                myFeature: { enabled: true }
+            }
+        }
+    ]);
+    
+    // register commands (optional)
+    api.commands((registry) => {
+        const { command } = registry;
+        
+        command('status')
+            .description('Show plugin status')
+            .handler((ctx) => {
+                ctx.send('§aMy Plugin is running!');
+            });
+            
+        // Config command is automatic! Every plugin gets:
+        // /my-plugin config - with enable/disable, debug, reset, and custom options
+    });
+    
+    // observe player events (recommended for most plugins)
+    api.on('player.move', (data) => {
+        api.log(`Player ${data.player.name} moved to ${data.position.x}, ${data.position.y}, ${data.position.z}`);
+    });
+    
+    // observe chat events
+    api.on('chat', (data) => {
+        if (data.text && data.text.includes('hello')) {
+            api.chat('Hello back!');
+        }
+    });
+    
+    // handle plugin restoration (when re-enabled after being disabled)
+    api.on('plugin.restored', (data) => {
+        if (data.pluginName === 'my-plugin') {
+            // plugin was just re-enabled, access current world state
+            const { players, gameState, teams } = data.currentState;
+            api.log('Plugin re-enabled! Current players: ' + players.length);
+        }
+    });
 };
 ```
+
+### Performance-First Design
+
+**For best performance, most plugins should use observation-only events.** The proxy uses a fast-path forwarding system that immediately forwards packets to the client while handling plugin events asynchronously. This provides optimal latency for gameplay.
+
+### Packet Interception API
+
+When you need to **modify or cancel packets** (rare cases), use the packet interception API:
+
+```javascript
+module.exports = (api) => {
+    api.metadata({
+        name: 'packet-modifier',
+        displayName: 'Packet Modifier'
+    });
+    
+    // intercept server→client chat packets (safe)
+    const unsubscribe = api.interceptPackets({
+        direction: 'server',  // 'server' or 'client'
+        packets: ['chat']     // array of packet names
+    }, (event) => {
+        // cancel packet
+        if (event.data.message.includes('BLOCKED')) {
+            event.cancel();
+            return;
+        }
+        
+        // modify packet
+        if (event.data.message.includes('MODIFY')) {
+            event.modify({
+                ...event.data,
+                message: event.data.message.replace('MODIFY', '[MODIFIED]')
+            });
+        }
+    });
+    
+    // cleanup when plugin unloads
+    return { cleanup: () => unsubscribe() };
+};
+```
+
+#### Security Restrictions
+
+**For security and anticheat protection, most packets are restricted from interception.** Only cosmetic/safe packets can be intercepted:
+
+**Allowed Packets:**
+- **Server→Client**: `chat`, `title`, `subtitle`, `sound_effect`, `named_sound_effect`, `player_list_item`, `teams`, `scoreboard_*`
+- **Client→Server**: `chat` (only)
+
+**Restricted Packets (Will throw error if attempted):**
+- **Movement**: `position`, `position_look`, `look`, `entity_action` 
+- **Combat**: `arm_animation`, `use_entity`, `entity_status`
+- **Blocks**: `block_place`, `block_dig`, `player_digging`
+- **Inventory**: `held_item_slot`, `window_click`, `set_slot`
+- **Entity/World State**: `entity_teleport`, `map_chunk`, `block_change`
+- **And many others** - see console error for full list
+
+These restrictions prevent plugins from triggering Hypixel's anticheat systems.
+
+### API Reference
+
+**Observation Events (Fast Path - Recommended):**
+- `api.on(event, handler)` - Listen to game events without affecting packet flow
+- Events: `'player.move'`, `'player.action'`, `'chat'`, `'player.join'`, `'player.leave'`, etc.
+
+**Packet Interception (Slower - Use Only When Needed):**
+- `api.interceptPackets(options, handler)` - Intercept packets for modification/cancellation
+- `options.direction`: `'server'` (server→client) or `'client'` (client→server)  
+- `options.packets`: Array of packet names to intercept
+- `handler(event)`: Function called for each intercepted packet
+  - `event.data`: Packet data object
+  - `event.meta`: Packet metadata (name, etc.)
+  - `event.cancel()`: Cancel the packet (won't be forwarded)
+  - `event.modify(newData)`: Modify packet data before forwarding
+  - Returns unsubscribe function for cleanup
+
+**Command Registration:**
+- `api.commands((registry) => { ... })` - Register plugin commands using command builder pattern
+  - `registry.command(name)` - Create a command builder
+  - `.description(text)` - Set command description
+  - `.argument(name, options)` - Add command arguments
+  - `.handler((ctx) => { ... })` - Set command handler function
+  - `ctx.send(message)` - Send message to player
+  - `ctx.sendSuccess(message)` - Send success message
+  - `ctx.sendError(message)` - Send error message
+
+**Config System:**
+- `api.metadata(object)` - **Required** - Register plugin metadata (name, version, etc.)
+- `api.configSchema(array)` - **Optional** - Define custom config options that appear in config menu
+- **Automatic config command** - Every plugin gets `/plugin-name config` with enable/disable/debug/reset
+- **No registration needed** - Config command appears automatically for all plugins
+
+**Automatic Plugin Management:**
+- **Global enable/disable works regardless of plugin code** - All API calls are blocked when disabled
+- **Automatic cleanup on disable**: Removes display names, packet interceptors, and modifications
+- **State restoration on enable**: Plugins receive current world state via `plugin.restored` event
+- **No developer effort required** - Works for any plugin automatically
+
+**Other Methods:**
+- `api.chat(message)` - Send chat message to player
+- `api.log(message)` - Log message with plugin prefix
+- `api.debugLog(message)` - Debug logging (only when debug enabled)
+- `api.getPlayer(uuid)` - Get player information
+- `api.players` - Array of all players
+
+### Best Practices
+
+1. **Use observation events by default** - Only intercept packets when you actually need to modify/cancel them
+2. **Handle errors** - Always wrap interceptor handlers in try/catch blocks
+3. **Minimize intercepted packets** - Only specify the exact packet types you need to modify
+4. **Clean up properly** - Store unsubscribe functions and call them when your plugin unloads
+5. **Test thoroughly** - Packet modification can break game functionality if done incorrectly
+
+### Example Plugins
+
+See `scripts/example-packet-interceptor.js` for a complete example demonstrating both observation and interception patterns.
 
 ## Authentication
 

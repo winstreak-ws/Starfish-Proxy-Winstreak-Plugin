@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "debug": false,
+  "alerts": {
+    "enabled": true,
+    "audioAlerts": {
+      "enabled": true
+    },
+    "alertDelay": 500
+  },
+  "modifyDisplayNames": {
+    "enabled": true
+  },
+  "showUnresolvedNicks": {
+    "enabled": true
+  },
+  "addNicksToCubelify": {
+    "enabled": false
+  }
+}

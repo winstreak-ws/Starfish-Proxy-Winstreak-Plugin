@@ -1,31 +1,31 @@
 const fs = require('fs');
 const path = require('path');
-
-const DEFAULT_CONFIG = {
-    proxyPort: 25565,
-    targetHost: 'mc.hypixel.net',
-    targetPort: 25565,
-    servers: {
-        'hypixel': { host: 'mc.hypixel.net', port: 25565 },
-        'ac-test': { host: 'anticheat-test.com', port: 25565 }
-    }
-};
+const { DEFAULT_CONFIG } = require('./config');
+const PluginStore = require('./plugin-store');
+const { getConfigDir, getPluginConfigDir, getPluginDataDir, getAuthCacheDir } = require('../utils/paths');
 
 class Storage {
     constructor(dataDir) {
-        this.dataDir = dataDir;
-        this.configDir = path.join(this.dataDir, 'config');
-        this.pluginDataDir = this.configDir;
+        this.configDir = getConfigDir();
+        this.pluginConfigDir = getPluginConfigDir();
+        this.pluginDataDir = getPluginDataDir();
+        this.authCacheDir = getAuthCacheDir();
         
         this.ensureDirectories();
     }
     
     ensureDirectories() {
-        if (!fs.existsSync(this.dataDir)) {
-            fs.mkdirSync(this.dataDir, { recursive: true });
-        }
         if (!fs.existsSync(this.configDir)) {
             fs.mkdirSync(this.configDir, { recursive: true });
+        }
+        if (!fs.existsSync(this.pluginConfigDir)) {
+            fs.mkdirSync(this.pluginConfigDir, { recursive: true });
+        }
+        if (!fs.existsSync(this.pluginDataDir)) {
+            fs.mkdirSync(this.pluginDataDir, { recursive: true });
+        }
+        if (!fs.existsSync(this.authCacheDir)) {
+            fs.mkdirSync(this.authCacheDir, { recursive: true });
         }
     }
     
@@ -55,7 +55,7 @@ class Storage {
     }
     
     loadPluginData(pluginName) {
-        const file = path.join(this.pluginDataDir, `${pluginName}.json`);
+        const file = path.join(this.pluginDataDir, `${pluginName}.data.json`);
         if (fs.existsSync(file)) {
             try {
                 return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -67,7 +67,7 @@ class Storage {
     }
     
     savePluginData(pluginName, data) {
-        const file = path.join(this.pluginDataDir, `${pluginName}.json`);
+        const file = path.join(this.pluginDataDir, `${pluginName}.data.json`);
         try {
             fs.writeFileSync(file, JSON.stringify(data, null, 2));
         } catch (err) {
@@ -90,55 +90,10 @@ class Storage {
         const data = this.loadPluginData(pluginName);
         return new PluginStore(pluginName, this, data.store || {});
     }
-}
-
-class PluginStore {
-    constructor(pluginName, storage, initialData = {}) {
-        this.pluginName = pluginName;
-        this.storage = storage;
-        this.data = { ...initialData };
-    }
     
-    get(key, defaultValue = undefined) {
-        return this.data[key] !== undefined ? this.data[key] : defaultValue;
-    }
-    
-    set(key, value) {
-        this.data[key] = value;
-        this.save();
-    }
-    
-    delete(key) {
-        delete this.data[key];
-        this.save();
-    }
-    
-    clear() {
-        this.data = {};
-        this.save();
-    }
-    
-    has(key) {
-        return key in this.data;
-    }
-    
-    keys() {
-        return Object.keys(this.data);
-    }
-    
-    values() {
-        return Object.values(this.data);
-    }
-    
-    entries() {
-        return Object.entries(this.data);
-    }
-    
-    save() {
-        const fullData = this.storage.loadPluginData(this.pluginName);
-        fullData.store = this.data;
-        this.storage.savePluginData(this.pluginName, fullData);
+    getAuthCacheDir() {
+        return this.authCacheDir;
     }
 }
 
-module.exports = { Storage };
+module.exports = { Storage }; 

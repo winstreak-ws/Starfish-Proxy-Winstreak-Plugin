@@ -1,6 +1,6 @@
 {
   "name": "starfish-proxy",
-  "version": "0.0.5",
+  "version": "0.1.1",
   "description": "A powerful Minecraft proxy for running scripts and enhancing gameplay",
   "main": "src/proxy.js",
   "scripts": {

@@ -1,11 +1,11 @@
 const mc = require('minecraft-protocol');
 const path = require('path');
 const fs = require('fs');
-
 const { PlayerSession } = require('./session');
-const { CommandHandler } = require('./command-handler');
+const { CommandHandler } = require('./command-system');
 const PluginAPI = require('./plugin-api');
 const { Storage } = require('./storage');
+const { getBaseDir } = require('./utils/paths');
 
 const PROXY_VERSION = '1.8.9';
 const PROXY_PORT = 25565;
@@ -14,9 +14,9 @@ const PROXY_PREFIX = '§6S§eta§fr§bfi§3sh§r';
 class MinecraftProxy {
     constructor() {
         this.PROXY_PREFIX = PROXY_PREFIX;
-        this.storage = new Storage(path.join(this.getBaseDir(), 'data'));
+        this.storage = new Storage();
         this.config = this.storage.loadConfig();
-        this.pluginAPI = new PluginAPI(this);
+        this.pluginAPI = new PluginAPI(this, null);
         this.commandHandler = new CommandHandler(this);
 
         this.server = null;
@@ -27,7 +27,7 @@ class MinecraftProxy {
     }
 
     getBaseDir() {
-        return process.pkg ? path.dirname(process.execPath) : path.join(__dirname, '..');
+        return getBaseDir();
     }
 
     initializeProxy() {
@@ -170,7 +170,7 @@ class MinecraftProxy {
         const { name, hostport } = ctx.args;
         const [host, port] = hostport.split(':');
         if (!host || !port) {
-            return ctx.sendError('Invalid format. Use: /proxy addserver <name> <host>:<port>');
+            return ctx.sendError('Invalid format. Use: /proxy addserver <n> <host>:<port>');
         }
         
         this.config.servers[name] = { host, port: parseInt(port) };
@@ -194,7 +194,7 @@ class MinecraftProxy {
             return ctx.sendError('You are not connected to a server');
         }
         
-        const authPath = path.join(this.getBaseDir(), 'auth_cache', this.currentPlayer.username);
+        const authPath = path.join(this.storage.getAuthCacheDir(), this.currentPlayer.username);
         if (fs.existsSync(authPath)) {
             fs.rmSync(authPath, { recursive: true, force: true });
         }
@@ -202,7 +202,7 @@ class MinecraftProxy {
         this.currentPlayer.forceReauth = true;
         ctx.sendSuccess('Authentication cache cleared. Reconnect to re-authenticate.');
     }
-    
+
     handlePluginsCommand(ctx) {
         const plugins = this.pluginAPI.getLoadedPlugins();
         if (plugins.length === 0) {
@@ -268,12 +268,21 @@ class MinecraftProxy {
     
     sendMessage(client, message) {
         if (!client || client.state !== mc.states.PLAY) return;
-        const isJson = typeof message === 'string' && message.trim().startsWith('{');
-        client.write('chat', {
-            message: isJson ? message : JSON.stringify({ text: message }),
-            position: 0,
-            sender: '0'
-        });
+
+        try {
+            // if the message already looks like a JSON chat component, don't wrap it again
+            const trimmed = typeof message === 'string' ? message.trim() : '';
+            const isJsonComponent = trimmed.startsWith('{') && trimmed.endsWith('}');
+            const finalMessage = isJsonComponent ? trimmed : JSON.stringify({ text: message });
+
+            client.write('chat', {
+                message: finalMessage,
+                position: 0,
+                sender: '0'
+            });
+        } catch (error) {
+            console.error('Failed to send message:', error.message);
+        }
     }
 
     kickPlayer(reason) {
