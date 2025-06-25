@@ -149,11 +149,7 @@ class PlayerSession {
         this.targetClient.removeAllListeners('packet');
 
         this.client.on('packet', (data, meta) => {
-            if (this.handleClientPacket(data, meta)) return;
-
-            if (this.targetClient?.state === mc.states.PLAY) {
-                this.targetClient.write(meta.name, data);
-            }
+            this.handleClientPacket(data, meta);
         });
 
         this.targetClient.on('packet', (data, meta) => {
@@ -198,12 +194,13 @@ class PlayerSession {
                 this._handleClientPacketEvents(data, meta);
             });
             
-            return true;
+            return;
         }
         
         if (!this.proxy.pluginAPI.events.hasPacketInterceptors('client', meta.name)) {
             if (meta.name === 'chat' && data.message.startsWith('/')) {
-                return this.proxy.commandHandler.handleCommand(data.message, this.client);
+                this.proxy.commandHandler.handleCommand(data.message, this.client);
+                return;
             }
             
             this.gameState.updateFromPacket(meta, data, false);
@@ -216,13 +213,14 @@ class PlayerSession {
                 this._handleClientPacketEvents(data, meta);
             });
             
-            return true;
+            return;
         }
         
         this.gameState.updateFromPacket(meta, data, false);
 
         if (meta.name === 'chat' && data.message.startsWith('/')) {
-            return this.proxy.commandHandler.handleCommand(data.message, this.client);
+            this.proxy.commandHandler.handleCommand(data.message, this.client);
+            return;
         }
         
         const event = {
@@ -252,7 +250,7 @@ class PlayerSession {
         }
         
         if (event.cancelled) {
-            return true;
+            return;
         }
         
         switch (meta.name) {
@@ -340,8 +338,6 @@ class PlayerSession {
         if (this.targetClient?.state === mc.states.PLAY) {
             this.targetClient.write(meta.name, event.modified ? event.modifiedData : data);
         }
-
-        return false;
     }
 
     handleServerPacket(data, meta) {    
