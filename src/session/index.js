@@ -199,7 +199,9 @@ class PlayerSession {
         
         if (!this.proxy.pluginAPI.events.hasPacketInterceptors('client', meta.name)) {
             if (meta.name === 'chat' && data.message.startsWith('/')) {
-                this.proxy.commandHandler.handleCommand(data.message, this.client);
+                if (!this.proxy.commandHandler.handleCommand(data.message, this.client)) {
+                    this.targetClient.write(meta.name, data);
+                }
                 return;
             }
             
