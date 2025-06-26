@@ -197,149 +197,60 @@ class PlayerSession {
             return;
         }
         
-        if (!this.proxy.pluginAPI.events.hasPacketInterceptors('client', meta.name)) {
-            if (meta.name === 'chat' && data.message.startsWith('/')) {
-                if (!this.proxy.commandHandler.handleCommand(data.message, this.client)) {
-                    this.targetClient.write(meta.name, data);
-                }
+        this.gameState.updateFromPacket(meta, data, false);
+        
+        let commandHandled = false;
+        if (meta.name === 'chat' && data.message.startsWith('/')) {
+            commandHandled = this.proxy.commandHandler.handleCommand(data.message, this.client);
+            if (commandHandled) {
                 return;
             }
-            
-            this.gameState.updateFromPacket(meta, data, false);
-            
-            if (this.targetClient?.state === mc.states.PLAY) {
-                this.targetClient.write(meta.name, data);
-            }
-            
-            setImmediate(() => {
-                this._handleClientPacketEvents(data, meta);
-            });
-            
-            return;
         }
         
-        this.gameState.updateFromPacket(meta, data, false);
-
-        if (meta.name === 'chat' && data.message.startsWith('/')) {
-            this.proxy.commandHandler.handleCommand(data.message, this.client);
-            return;
-        }
+        let shouldForward = true;
+        let finalData = data;
         
-        const event = {
-            data: { ...data },
-            meta: { ...meta },
-            cancelled: false,
-            modified: false,
-            modifiedData: null
-        };
-        
-        event.modify = (newData) => {
-            event.modified = true;
-            event.modifiedData = newData;
-        };
-        
-        event.cancel = () => {
-            event.cancelled = true;
-        };
-        
-        const interceptors = this.proxy.pluginAPI.events.getPacketInterceptors('client', meta.name);
-        for (const handler of interceptors) {
-            try {
-                handler(event);
-            } catch (error) {
-                console.error(`Error in client packet interceptor for ${meta.name}:`, error.message);
-            }
-        }
-        
-        if (event.cancelled) {
-            return;
-        }
-        
-        switch (meta.name) {
-            case 'position':
-                this.proxy.pluginAPI.emit('player.move', {
-                    player: this._createCurrentPlayerObject(),
-                    position: { x: data.x, y: data.y, z: data.z },
-                    onGround: data.onGround,
-                    rotation: undefined
-                });
-                break;
-            case 'position_look':
-                this.proxy.pluginAPI.emit('player.move', {
-                    player: this._createCurrentPlayerObject(),
-                    position: { x: data.x, y: data.y, z: data.z },
-                    onGround: data.onGround,
-                    rotation: { yaw: data.yaw, pitch: data.pitch }
-                });
-                break;
-            case 'look':
-                this.proxy.pluginAPI.emit('player.move', {
-                    player: this._createCurrentPlayerObject(),
-                    position: { ...this.gameState.position },
-                    onGround: data.onGround,
-                    rotation: { yaw: data.yaw, pitch: data.pitch }
-                });
-                break;
-            case 'arm_animation':
-                this.proxy.pluginAPI.emit('player.action', { 
-                    player: this._createCurrentPlayerObject(),
-                    type: 'swing'
-                });
-                break;
-            case 'entity_action':
-                if (data.actionId === 0) {
-                    this.proxy.pluginAPI.emit('player.action', { 
-                        player: this._createCurrentPlayerObject(),
-                        type: 'crouch',
-                        value: true
-                    });
-                } else if (data.actionId === 1) {
-                    this.proxy.pluginAPI.emit('player.action', { 
-                        player: this._createCurrentPlayerObject(),
-                        type: 'crouch',
-                        value: false
-                    });
-                } else if (data.actionId === 3) {
-                    this.proxy.pluginAPI.emit('player.action', { 
-                        player: this._createCurrentPlayerObject(),
-                        type: 'sprint',
-                        value: true
-                    });
-                } else if (data.actionId === 4) {
-                    this.proxy.pluginAPI.emit('player.action', { 
-                        player: this._createCurrentPlayerObject(),
-                        type: 'sprint',
-                        value: false
-                    });
+        if (this.proxy.pluginAPI.events.hasPacketInterceptors('client', meta.name)) {
+            const event = {
+                data: { ...data },
+                meta: { ...meta },
+                cancelled: false,
+                modified: false,
+                modifiedData: null
+            };
+            
+            event.modify = (newData) => {
+                event.modified = true;
+                event.modifiedData = newData;
+            };
+            
+            event.cancel = () => {
+                event.cancelled = true;
+            };
+            
+            const interceptors = this.proxy.pluginAPI.events.getPacketInterceptors('client', meta.name);
+            for (const handler of interceptors) {
+                try {
+                    handler(event);
+                } catch (error) {
+                    console.error(`Error in client packet interceptor for ${meta.name}:`, error.message);
                 }
-                break;
-            case 'block_place':
-                this.proxy.pluginAPI.emit('player.action', { 
-                    player: this._createCurrentPlayerObject(),
-                    type: 'useItem',
-                    value: true
-                });
-                setTimeout(() => {
-                    if (!this.connected || this.proxy.currentPlayer !== this) return;
-                    this.proxy.pluginAPI.emit('player.action', { 
-                        player: this._createCurrentPlayerObject(),
-                        type: 'useItem',
-                        value: false
-                    });
-                }, 500);
-                break;
-            case 'held_item_slot':
-                this.proxy.pluginAPI.emit('player.equipment', { 
-                    player: this._createCurrentPlayerObject(),
-                    slot: data.slotId,
-                    item: null
-                });
-                break;
+            }
+            
+            if (event.cancelled) {
+                shouldForward = false;
+            } else {
+                finalData = event.modified ? event.modifiedData : data;
+            }
         }
-
-        if (this.targetClient?.state === mc.states.PLAY) {
-            this.targetClient.write(meta.name, event.modified ? event.modifiedData : data);
+        
+        if (shouldForward && this.targetClient?.state === mc.states.PLAY) {
+            this.targetClient.write(meta.name, finalData);
         }
+        
+        setImmediate(() => {
+            this._handleClientPacketEvents(finalData, meta);
+        });
     }
 
     handleServerPacket(data, meta) {    
