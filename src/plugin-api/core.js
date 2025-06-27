@@ -46,6 +46,7 @@ class Core {
         
         this.enabled = config.enabled;
         this.debug = config.debug;
+        this.hypixelSafeMode = true; // hardcoded for production version
         
         this.config = {
             get: (key) => {
@@ -128,7 +129,6 @@ class Core {
                 }
             });
             
-            // Save the updated config
             const configPath = path.join(getPluginConfigDir(), `${this.metadata.name}.config.json`);
             try {
                 fs.writeFileSync(configPath, JSON.stringify(current, null, 2));
@@ -157,6 +157,42 @@ class Core {
             this.config.set(key, current[key]);
         });
         return true;
+    }
+    
+    isHypixelSafe(methodName) {
+        if (!this.hypixelSafeMode) return true;
+        
+        const unsafeMethods = new Set([
+            // player state manipulation
+            'sendPosition', 'sendHealth', 'sendExperience', 'sendAbilities',
+            
+            // entity manipulation
+            'spawnPlayer', 'spawnLiving', 'spawnObject', 'spawnExperienceOrb',
+            'setEntityVelocity', 'teleportEntity', 'moveEntity', 'setEntityLook',
+            'setEntityLookAndMove', 'setEntityHeadRotation', 'setEntityEquipment',
+            'addEntityEffect', 'removeEntityEffect', 'setEntityStatus', 
+            'setEntityMetadata', 'animateEntity', 'collectEntity', 'attachEntity',
+            
+            // inventory manipulation
+            'openWindow', 'closeWindow', 'setSlot', 'setWindowItems', 'sendTransaction',
+            'sendCraftProgress', 'setHeldItemSlot', 'creativeInventoryAction', 'enchantItem',
+            'createChest', 'createHopper', 'createDispenser', 'fillWindow', 'clearWindow',
+            
+            // world manipulation
+            'sendExplosion', 'sendBlockChange', 'sendMultiBlockChange', 'sendWorldEvent',
+            'sendTimeUpdate', 'sendSpawnPosition', 'sendGameStateChange',
+            
+            // server administration
+            'kick', 'sendLogin'
+        ]);
+        
+        return !unsafeMethods.has(methodName);
+    }
+    
+    logHypixelBlock(methodName) {
+        if (this.debug) {
+            this.log(`Method '${methodName}' blocked by safe mode.`);
+        }
     }
 }
 

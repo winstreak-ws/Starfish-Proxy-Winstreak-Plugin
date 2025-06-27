@@ -5,6 +5,9 @@ const DisplayNames = require('./display-names');
 const Commands = require('./commands');
 const Communication = require('./communication');
 const World = require('./world');
+const Entities = require('./entities');
+const Inventory = require('./inventory');
+const Server = require('./server');
 const fs = require('fs');
 const path = require('path');
 const { getPluginsDir } = require('../utils/paths');
@@ -24,6 +27,9 @@ class PluginAPI {
         this.commandsModule = new Commands(proxy, this.core);
         this.communicationModule = new Communication(proxy, this.core);
         this.worldModule = new World(proxy, this.core);
+        this.entitiesModule = new Entities(proxy, this.core);
+        this.inventoryModule = new Inventory(proxy, this.core);
+        this.serverModule = new Server(proxy, this.core);
         
         this.config = this.core.config;
         this.log = this.core.log.bind(this.core);
@@ -31,6 +37,7 @@ class PluginAPI {
         
         this.on = this.events.on.bind(this.events);
         this.emit = this.events.emit.bind(this.events);
+        this.intercept = this.events.intercept.bind(this.events);
         
         this.setCustomDisplayName = this.displayNames.setCustomDisplayName.bind(this.displayNames);
         this.updatePlayerList = this.displayNames.updatePlayerList.bind(this.displayNames);
@@ -38,14 +45,37 @@ class PluginAPI {
         this.clearCustomDisplayName = this.displayNames.clearCustomDisplayName.bind(this.displayNames);
         this.customDisplayNames = this.displayNames.customDisplayNames;
         
+        // communication methods
         this.chat = this.communicationModule.chat.bind(this.communicationModule);
         this.sound = this.communicationModule.sound.bind(this.communicationModule);
+        this.sendTitle = this.communicationModule.sendTitle.bind(this.communicationModule);
+        this.sendActionBar = this.communicationModule.sendActionBar.bind(this.communicationModule);
+        this.sendParticle = this.communicationModule.sendParticle.bind(this.communicationModule);
+        
+        // server administration methods
+        this.kick = this.serverModule.kick.bind(this.serverModule);
+        this.sendKeepAlive = this.serverModule.sendKeepAlive.bind(this.serverModule);
+        this.sendTabComplete = this.serverModule.sendTabComplete.bind(this.serverModule);
+        this.sendCustomPayload = this.serverModule.sendCustomPayload.bind(this.serverModule);
+        this.sendLogin = this.serverModule.sendLogin.bind(this.serverModule);
+        
+        // inventory/GUI methods
+        this.openWindow = this.inventoryModule.openWindow.bind(this.inventoryModule);
+        this.closeWindow = this.inventoryModule.closeWindow.bind(this.inventoryModule);
+        this.setSlot = this.inventoryModule.setSlot.bind(this.inventoryModule);
+        this.setWindowItems = this.inventoryModule.setWindowItems.bind(this.inventoryModule);
+        this.sendTransaction = this.inventoryModule.sendTransaction.bind(this.inventoryModule);
+        this.sendCraftProgress = this.inventoryModule.sendCraftProgress.bind(this.inventoryModule);
+        this.setHeldItemSlot = this.inventoryModule.setHeldItemSlot.bind(this.inventoryModule);
+        this.creativeInventoryAction = this.inventoryModule.creativeInventoryAction.bind(this.inventoryModule);
+        this.enchantItem = this.inventoryModule.enchantItem.bind(this.inventoryModule);
+        this.createChest = this.inventoryModule.createChest.bind(this.inventoryModule);
+        this.createHopper = this.inventoryModule.createHopper.bind(this.inventoryModule);
+        this.createDispenser = this.inventoryModule.createDispenser.bind(this.inventoryModule);
+        this.fillWindow = this.inventoryModule.fillWindow.bind(this.inventoryModule);
+        this.clearWindow = this.inventoryModule.clearWindow.bind(this.inventoryModule);
         
         this.commands = this.commandsModule.register.bind(this.commandsModule);
-        
-        Object.defineProperty(this, 'enabled', {
-            get: () => this.core.enabled
-        });
         
         Object.defineProperty(this, 'debug', {
             get: () => this.core.debug
@@ -55,6 +85,7 @@ class PluginAPI {
             get: () => this.playersModule.getPlayers()
         });
         
+        // player query methods
         this.getPlayer = this.playersModule.getPlayer.bind(this.playersModule);
         this.getPlayerByName = this.playersModule.getPlayerByName.bind(this.playersModule);
         this.getPlayerInfo = this.playersModule.getPlayerInfo.bind(this.playersModule);
@@ -62,12 +93,47 @@ class PluginAPI {
         this.getPlayersWithinDistance = this.playersModule.getPlayersWithinDistance.bind(this.playersModule);
         this.getPlayersInTeam = this.playersModule.getPlayersInTeam.bind(this.playersModule);
         
-        Object.defineProperty(this, 'gameState', {
-            get: () => this.worldModule.gameState
-        });
+        // player state methods
+        this.sendHealth = this.playersModule.sendHealth.bind(this.playersModule);
+        this.sendExperience = this.playersModule.sendExperience.bind(this.playersModule);
+        this.sendPosition = this.playersModule.sendPosition.bind(this.playersModule);
+        this.sendAbilities = this.playersModule.sendAbilities.bind(this.playersModule);
+        this.sendPlayerInfo = this.playersModule.sendPlayerInfo.bind(this.playersModule);
         
+        // entity methods
+        this.spawnPlayer = this.entitiesModule.spawnPlayer.bind(this.entitiesModule);
+        this.spawnLiving = this.entitiesModule.spawnLiving.bind(this.entitiesModule);
+        this.spawnObject = this.entitiesModule.spawnObject.bind(this.entitiesModule);
+        this.spawnExperienceOrb = this.entitiesModule.spawnExperienceOrb.bind(this.entitiesModule);
+        this.setEntityVelocity = this.entitiesModule.setVelocity.bind(this.entitiesModule);
+        this.teleportEntity = this.entitiesModule.teleport.bind(this.entitiesModule);
+        this.moveEntity = this.entitiesModule.move.bind(this.entitiesModule);
+        this.setEntityLook = this.entitiesModule.look.bind(this.entitiesModule);
+        this.setEntityLookAndMove = this.entitiesModule.lookAndMove.bind(this.entitiesModule);
+        this.setEntityHeadRotation = this.entitiesModule.setHeadRotation.bind(this.entitiesModule);
+        this.setEntityEquipment = this.entitiesModule.setEquipment.bind(this.entitiesModule);
+        this.addEntityEffect = this.entitiesModule.addEffect.bind(this.entitiesModule);
+        this.removeEntityEffect = this.entitiesModule.removeEffect.bind(this.entitiesModule);
+        this.setEntityStatus = this.entitiesModule.setStatus.bind(this.entitiesModule);
+        this.setEntityMetadata = this.entitiesModule.setMetadata.bind(this.entitiesModule);
+        this.animateEntity = this.entitiesModule.animate.bind(this.entitiesModule);
+        this.collectEntity = this.entitiesModule.collect.bind(this.entitiesModule);
+        this.attachEntity = this.entitiesModule.attach.bind(this.entitiesModule);
+        
+        // world methods
         this.getTeams = this.worldModule.getTeams.bind(this.worldModule);
         this.getPlayerTeam = this.worldModule.getPlayerTeam.bind(this.worldModule);
+        this.sendExplosion = this.worldModule.sendExplosion.bind(this.worldModule);
+        this.sendBlockChange = this.worldModule.sendBlockChange.bind(this.worldModule);
+        this.sendMultiBlockChange = this.worldModule.sendMultiBlockChange.bind(this.worldModule);
+        this.sendWorldEvent = this.worldModule.sendWorldEvent.bind(this.worldModule);
+        this.sendTimeUpdate = this.worldModule.sendTimeUpdate.bind(this.worldModule);
+        this.sendSpawnPosition = this.worldModule.sendSpawnPosition.bind(this.worldModule);
+        this.sendGameStateChange = this.worldModule.sendGameStateChange.bind(this.worldModule);
+        this.sendScoreboardObjective = this.worldModule.sendScoreboardObjective.bind(this.worldModule);
+        this.sendScoreboardScore = this.worldModule.sendScoreboardScore.bind(this.worldModule);
+        this.sendScoreboardDisplay = this.worldModule.sendScoreboardDisplay.bind(this.worldModule);
+        this.sendTeams = this.worldModule.sendTeams.bind(this.worldModule);
     }
     
     setPluginEnabled(pluginName, enabled) {
@@ -90,8 +156,14 @@ class PluginAPI {
         }
         pluginState.modifications.displayNames.clear();
         
-        for (const { direction, packets, handler } of pluginState.modifications.interceptors) {
-            this.events.unregisterPacketInterceptor(direction, packets, handler);
+        for (const interceptorInfo of pluginState.modifications.interceptors) {
+            if (interceptorInfo.unsubscribe) {
+                // New intercept format
+                interceptorInfo.unsubscribe();
+            } else if (interceptorInfo.direction && interceptorInfo.packets && interceptorInfo.handler) {
+                // Old interceptPackets format
+                this.events.unregisterPacketInterceptor(interceptorInfo.direction, interceptorInfo.packets, interceptorInfo.handler);
+            }
         }
         pluginState.modifications.interceptors.clear();
         
@@ -204,7 +276,6 @@ class PluginAPI {
             config: pluginCore.config,
             log: withEnabledCheck(pluginCore.log.bind(pluginCore), 'log'),
             debugLog: withEnabledCheck(pluginCore.debugLog.bind(pluginCore), 'debugLog'),
-            get enabled() { return pluginState?.enabled && pluginCore.enabled; },
             get debug() { return pluginCore.debug; },
             
             initializeConfig: pluginCore.initializeConfig.bind(pluginCore),
@@ -220,8 +291,29 @@ class PluginAPI {
                 return mainAPI.on(event, wrappedHandler);
             },
             emit: withEnabledCheck(mainAPI.emit, 'emit'),
-            chat: withEnabledCheck(mainAPI.chat, 'chat'),
-            sound: withEnabledCheck(mainAPI.sound, 'sound'),
+            
+            intercept: (event, handler) => {
+                if (!mainAPI._checkPluginEnabled(pluginName, 'intercept')) {
+                    return () => {};
+                }
+                
+                const wrappedHandler = withEnabledCheck(handler, 'packetInterceptor');
+                
+                const unsubscribe = mainAPI.intercept(event, wrappedHandler);
+                
+                const interceptorInfo = { event, handler: wrappedHandler, unsubscribe };
+                pluginState.modifications.interceptors.add(interceptorInfo);
+                registeredInterceptors.push(interceptorInfo);
+                
+                return () => {
+                    unsubscribe();
+                    pluginState.modifications.interceptors.delete(interceptorInfo);
+                    const index = registeredInterceptors.indexOf(interceptorInfo);
+                    if (index !== -1) {
+                        registeredInterceptors.splice(index, 1);
+                    }
+                };
+            },
             
             interceptPackets: (options, handler) => {
                 if (!mainAPI._checkPluginEnabled(pluginName, 'interceptPackets')) {
@@ -258,6 +350,9 @@ class PluginAPI {
                 };
             },
             
+            chat: withEnabledCheck(mainAPI.chat, 'chat'),
+            sound: withEnabledCheck(mainAPI.sound, 'sound'),
+            
             everyTick: (callback) => {
                 const wrappedCallback = withEnabledCheck(callback, 'tickHandler');
                 return mainAPI.on('tick', wrappedCallback);
@@ -278,12 +373,79 @@ class PluginAPI {
             getPlayersWithinDistance: withEnabledCheck(mainAPI.getPlayersWithinDistance, 'getPlayersWithinDistance'),
             getPlayersInTeam: withEnabledCheck(mainAPI.getPlayersInTeam, 'getPlayersInTeam'),
             
-            get gameState() { 
-                return mainAPI._checkPluginEnabled(pluginName, 'gameState') ? mainAPI.worldModule.gameState : null; 
-            },
+            // world methods
             getTeams: withEnabledCheck(mainAPI.getTeams, 'getTeams'),
             getPlayerTeam: withEnabledCheck(mainAPI.getPlayerTeam, 'getPlayerTeam'),
             
+            // communication methods
+            sendTitle: withEnabledCheck(mainAPI.sendTitle, 'sendTitle'),
+            sendActionBar: withEnabledCheck(mainAPI.sendActionBar, 'sendActionBar'),
+            sendParticle: withEnabledCheck(mainAPI.sendParticle, 'sendParticle'),
+            
+            // server administration methods
+            kick: withEnabledCheck(mainAPI.kick, 'kick'),
+            sendKeepAlive: withEnabledCheck(mainAPI.sendKeepAlive, 'sendKeepAlive'),
+            sendTabComplete: withEnabledCheck(mainAPI.sendTabComplete, 'sendTabComplete'),
+            sendCustomPayload: withEnabledCheck(mainAPI.sendCustomPayload, 'sendCustomPayload'),
+            sendLogin: withEnabledCheck(mainAPI.sendLogin, 'sendLogin'),
+            
+            // inventory/GUI methods
+            openWindow: withEnabledCheck(mainAPI.openWindow, 'openWindow'),
+            closeWindow: withEnabledCheck(mainAPI.closeWindow, 'closeWindow'),
+            setSlot: withEnabledCheck(mainAPI.setSlot, 'setSlot'),
+            setWindowItems: withEnabledCheck(mainAPI.setWindowItems, 'setWindowItems'),
+            sendTransaction: withEnabledCheck(mainAPI.sendTransaction, 'sendTransaction'),
+            sendCraftProgress: withEnabledCheck(mainAPI.sendCraftProgress, 'sendCraftProgress'),
+            setHeldItemSlot: withEnabledCheck(mainAPI.setHeldItemSlot, 'setHeldItemSlot'),
+            creativeInventoryAction: withEnabledCheck(mainAPI.creativeInventoryAction, 'creativeInventoryAction'),
+            enchantItem: withEnabledCheck(mainAPI.enchantItem, 'enchantItem'),
+            createChest: withEnabledCheck(mainAPI.createChest, 'createChest'),
+            createHopper: withEnabledCheck(mainAPI.createHopper, 'createHopper'),
+            createDispenser: withEnabledCheck(mainAPI.createDispenser, 'createDispenser'),
+            fillWindow: withEnabledCheck(mainAPI.fillWindow, 'fillWindow'),
+            clearWindow: withEnabledCheck(mainAPI.clearWindow, 'clearWindow'),
+            
+            // player state methods
+            sendHealth: withEnabledCheck(mainAPI.sendHealth, 'sendHealth'),
+            sendExperience: withEnabledCheck(mainAPI.sendExperience, 'sendExperience'),
+            sendPosition: withEnabledCheck(mainAPI.sendPosition, 'sendPosition'),
+            sendAbilities: withEnabledCheck(mainAPI.sendAbilities, 'sendAbilities'),
+            sendPlayerInfo: withEnabledCheck(mainAPI.sendPlayerInfo, 'sendPlayerInfo'),
+            
+            // entity methods
+            spawnPlayer: withEnabledCheck(mainAPI.spawnPlayer, 'spawnPlayer'),
+            spawnLiving: withEnabledCheck(mainAPI.spawnLiving, 'spawnLiving'),
+            spawnObject: withEnabledCheck(mainAPI.spawnObject, 'spawnObject'),
+            spawnExperienceOrb: withEnabledCheck(mainAPI.spawnExperienceOrb, 'spawnExperienceOrb'),
+            setEntityVelocity: withEnabledCheck(mainAPI.setEntityVelocity, 'setEntityVelocity'),
+            teleportEntity: withEnabledCheck(mainAPI.teleportEntity, 'teleportEntity'),
+            moveEntity: withEnabledCheck(mainAPI.moveEntity, 'moveEntity'),
+            setEntityLook: withEnabledCheck(mainAPI.setEntityLook, 'setEntityLook'),
+            setEntityLookAndMove: withEnabledCheck(mainAPI.setEntityLookAndMove, 'setEntityLookAndMove'),
+            setEntityHeadRotation: withEnabledCheck(mainAPI.setEntityHeadRotation, 'setEntityHeadRotation'),
+            setEntityEquipment: withEnabledCheck(mainAPI.setEntityEquipment, 'setEntityEquipment'),
+            addEntityEffect: withEnabledCheck(mainAPI.addEntityEffect, 'addEntityEffect'),
+            removeEntityEffect: withEnabledCheck(mainAPI.removeEntityEffect, 'removeEntityEffect'),
+            setEntityStatus: withEnabledCheck(mainAPI.setEntityStatus, 'setEntityStatus'),
+            setEntityMetadata: withEnabledCheck(mainAPI.setEntityMetadata, 'setEntityMetadata'),
+            animateEntity: withEnabledCheck(mainAPI.animateEntity, 'animateEntity'),
+            collectEntity: withEnabledCheck(mainAPI.collectEntity, 'collectEntity'),
+            attachEntity: withEnabledCheck(mainAPI.attachEntity, 'attachEntity'),
+            
+            // world methods
+            sendExplosion: withEnabledCheck(mainAPI.sendExplosion, 'sendExplosion'),
+            sendBlockChange: withEnabledCheck(mainAPI.sendBlockChange, 'sendBlockChange'),
+            sendMultiBlockChange: withEnabledCheck(mainAPI.sendMultiBlockChange, 'sendMultiBlockChange'),
+            sendWorldEvent: withEnabledCheck(mainAPI.sendWorldEvent, 'sendWorldEvent'),
+            sendTimeUpdate: withEnabledCheck(mainAPI.sendTimeUpdate, 'sendTimeUpdate'),
+            sendSpawnPosition: withEnabledCheck(mainAPI.sendSpawnPosition, 'sendSpawnPosition'),
+            sendGameStateChange: withEnabledCheck(mainAPI.sendGameStateChange, 'sendGameStateChange'),
+            sendScoreboardObjective: withEnabledCheck(mainAPI.sendScoreboardObjective, 'sendScoreboardObjective'),
+            sendScoreboardScore: withEnabledCheck(mainAPI.sendScoreboardScore, 'sendScoreboardScore'),
+            sendScoreboardDisplay: withEnabledCheck(mainAPI.sendScoreboardDisplay, 'sendScoreboardDisplay'),
+            sendTeams: withEnabledCheck(mainAPI.sendTeams, 'sendTeams'),
+            
+            // display names & UI
             setCustomDisplayName: (uuid, displayName) => {
                 if (!mainAPI._checkPluginEnabled(pluginName, 'setCustomDisplayName')) return;
                 
@@ -299,13 +461,18 @@ class PluginAPI {
             updatePlayerList: withEnabledCheck(mainAPI.updatePlayerList, 'updatePlayerList'),
             clearAllCustomDisplayNames: withEnabledCheck(mainAPI.clearAllCustomDisplayNames, 'clearAllCustomDisplayNames'),
             
+            // commands
             commands: (commands) => {
-                return mainAPI.proxy.commandHandler.register(pluginMetadata.name, commands);
+                return mainAPI.commandsModule.register(pluginMetadata.name, commands);
             },
             
             _cleanup: () => {
-                for (const { direction, packets, handler } of registeredInterceptors) {
-                    mainAPI.events.unregisterPacketInterceptor(direction, packets, handler);
+                for (const interceptorInfo of registeredInterceptors) {
+                    if (interceptorInfo.unsubscribe) {
+                        interceptorInfo.unsubscribe();
+                    } else if (interceptorInfo.direction && interceptorInfo.packets && interceptorInfo.handler) {
+                        mainAPI.events.unregisterPacketInterceptor(interceptorInfo.direction, interceptorInfo.packets, interceptorInfo.handler);
+                    }
                 }
                 registeredInterceptors.length = 0;
             }

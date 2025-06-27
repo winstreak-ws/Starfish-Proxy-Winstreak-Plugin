@@ -134,6 +134,105 @@ class Players {
         
         return this.proxy.currentPlayer.gameState.playerInfo.get(uuid) || null;
     }
+    
+    
+    sendHealth(health, food, foodSaturation) {
+        if (!this.core.isHypixelSafe('sendHealth')) {
+            this.core.logHypixelBlock('sendHealth');
+            return false;
+        }
+        if (!this.proxy.currentPlayer?.client) return false;
+        
+        try {
+            return this.proxy.currentPlayer.client.write('health', {
+                health,
+                food,
+                foodSaturation
+            });
+        } catch (error) {
+            this.core.log(`Failed to send health: ${error.message}`);
+            return false;
+        }
+    }
+    
+    sendExperience(experienceBar, level, totalExperience) {
+        if (!this.core.isHypixelSafe('sendExperience')) {
+            this.core.logHypixelBlock('sendExperience');
+            return false;
+        }
+        if (!this.proxy.currentPlayer?.client) return false;
+        
+        try {
+            return this.proxy.currentPlayer.client.write('experience', {
+                experienceBar,
+                level,
+                totalExperience
+            });
+        } catch (error) {
+            this.core.log(`Failed to send experience: ${error.message}`);
+            return false;
+        }
+    }
+    
+    sendPosition(x, y, z, yaw, pitch, flags = 0) {
+        if (!this.core.isHypixelSafe('sendPosition')) {
+            this.core.logHypixelBlock('sendPosition');
+            return false;
+        }
+        if (!this.proxy.currentPlayer?.client) return false;
+        
+        try {
+            return this.proxy.currentPlayer.client.write('position', {
+                x,
+                y,
+                z,
+                yaw,
+                pitch,
+                flags,
+                teleportId: Math.floor(Math.random() * 1000000)
+            });
+        } catch (error) {
+            this.core.log(`Failed to send position: ${error.message}`);
+            return false;
+        }
+    }
+    
+
+    
+    sendAbilities(flags, flyingSpeed = 0.05, walkingSpeed = 0.1) {
+        if (!this.core.isHypixelSafe('sendAbilities')) {
+            this.core.logHypixelBlock('sendAbilities');
+            return false;
+        }
+        if (!this.proxy.currentPlayer?.client) return false;
+        
+        try {
+            return this.proxy.currentPlayer.client.write('abilities', {
+                flags,
+                flyingSpeed,
+                walkingSpeed
+            });
+        } catch (error) {
+            this.core.log(`Failed to send abilities: ${error.message}`);
+            return false;
+        }
+    }
+    
+    sendPlayerInfo(action, data) {
+        if (!this.proxy.currentPlayer?.client) return false;
+        
+        try {
+            return this.proxy.currentPlayer.client.write('player_info', {
+                action,
+                data
+            });
+        } catch (error) {
+            this.core.log(`Failed to send player info: ${error.message}`);
+            return false;
+        }
+    }
+    
+
 }
 
 module.exports = Players; 

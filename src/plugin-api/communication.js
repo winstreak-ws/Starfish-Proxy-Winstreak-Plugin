@@ -48,6 +48,73 @@ class Communication {
             console.error('Failed to play sound:', error.message);
         }
     }
+    
+    sendTitle(title, subtitle = '', fadeIn = 10, stay = 70, fadeOut = 20) {
+        if (!this.proxy.currentPlayer?.client) return false;
+        
+        try {
+            const success = this.proxy.currentPlayer.client.write('title', {
+                action: 0,
+                text: JSON.stringify({ text: title })
+            });
+            
+            if (subtitle) {
+                this.proxy.currentPlayer.client.write('title', {
+                    action: 1,
+                    text: JSON.stringify({ text: subtitle })
+                });
+            }
+            
+            this.proxy.currentPlayer.client.write('title', {
+                action: 2,
+                fadeIn,
+                stay,
+                fadeOut
+            });
+            
+            return success;
+        } catch (error) {
+            this.core.log(`Failed to send title: ${error.message}`);
+            return false;
+        }
+    }
+    
+    sendActionBar(text) {
+        if (!this.proxy.currentPlayer?.client) return false;
+        
+        try {
+            return this.proxy.currentPlayer.client.write('title', {
+                action: 3,
+                text: JSON.stringify({ text })
+            });
+        } catch (error) {
+            this.core.log(`Failed to send actionbar: ${error.message}`);
+            return false;
+        }
+    }
+    
+    sendParticle(particleId, longDistance, x, y, z, offsetX = 0, offsetY = 0, offsetZ = 0, particleData = 0, particleCount = 1, data = []) {
+        if (!this.proxy.currentPlayer?.client) return false;
+        
+        try {
+            return this.proxy.currentPlayer.client.write('particle', {
+                particleId,
+                longDistance,
+                x,
+                y,
+                z,
+                offsetX,
+                offsetY,
+                offsetZ,
+                particleData,
+                particleCount,
+                data
+            });
+        } catch (error) {
+            this.core.log(`Failed to send particle: ${error.message}`);
+            return false;
+        }
+    }
 }
 
 module.exports = Communication; 

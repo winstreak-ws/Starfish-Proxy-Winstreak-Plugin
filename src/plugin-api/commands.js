@@ -4,8 +4,8 @@ class Commands {
         this.core = core;
     }
     
-    register(commands) {
-        return this.proxy.commandHandler.register(this.core.metadata?.name || 'proxy', commands);
+    register(pluginName, commands) {
+        return this.proxy.commandHandler.register(pluginName, commands);
     }
 }
 

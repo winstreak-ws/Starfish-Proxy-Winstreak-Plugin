@@ -92,22 +92,18 @@ class MinecraftProxy {
         const now = Date.now();
         const attempts = this.loginAttempts.get(username) || { count: 0, lastAttempt: 0 };
         
-        // Reset count if it's been more than 20 seconds
         if (now - attempts.lastAttempt > 20000) {
             attempts.count = 0;
         }
         
-        // Check if we should reject (before incrementing)
         if (attempts.count >= 2 && now - attempts.lastAttempt < 20000) {
             return true;
         }
         
-        // Only increment if we're allowing the connection
         attempts.count++;
         attempts.lastAttempt = now;
         this.loginAttempts.set(username, attempts);
         
-        // Cleanup old entries
         for (const [user, data] of this.loginAttempts.entries()) {
             if (now - data.lastAttempt > 60000) {
                 this.loginAttempts.delete(user);
@@ -270,7 +266,6 @@ class MinecraftProxy {
         if (!client || client.state !== mc.states.PLAY) return;
 
         try {
-            // if the message already looks like a JSON chat component, don't wrap it again
             const trimmed = typeof message === 'string' ? message.trim() : '';
             const isJsonComponent = trimmed.startsWith('{') && trimmed.endsWith('}');
             const finalMessage = isJsonComponent ? trimmed : JSON.stringify({ text: message });

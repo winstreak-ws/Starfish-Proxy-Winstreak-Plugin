@@ -12,7 +12,6 @@ class Events extends EventEmitter {
         this.packetInterceptors.set('server', new Map());
         this.packetInterceptors.set('client', new Map());
         
-        // packets that are restricted from interception to prevent anticheat flags and other bad things
         this.restrictedPackets = {
             client: new Set([
                 'position',
@@ -75,6 +74,10 @@ class Events extends EventEmitter {
     }
     
     on(event, handler) {
+        if (event.startsWith('packet:')) {
+            return this._handlePacketEvent(event, handler, false);
+        }
+        
         if (!this.eventHandlers.has(event)) {
             this.eventHandlers.set(event, new Set());
         }
@@ -85,6 +88,59 @@ class Events extends EventEmitter {
                 this.on(nextEvent, nextHandler);
                 return this.on(nextEvent, nextHandler);
             }
+        };
+    }
+    
+    intercept(event, handler) {
+        if (event.startsWith('packet:')) {
+            return this._handlePacketEvent(event, handler, true);
+        }
+        
+        throw new Error('intercept() only supports packet events. Use format: packet:direction:packetName');
+    }
+    
+    _handlePacketEvent(event, handler, canModify) {
+        const parts = event.split(':');
+        if (parts.length !== 3 || parts[0] !== 'packet') {
+            throw new Error('Packet events must use format: packet:direction:packetName');
+        }
+        
+        const [, direction, packetName] = parts;
+        
+        if (!['server', 'client'].includes(direction)) {
+            throw new Error('Direction must be either "server" or "client"');
+        }
+        
+        if (typeof handler !== 'function') {
+            throw new Error('Handler must be a function');
+        }
+        
+        if (canModify && !this.canModifyPacket(direction, packetName)) {
+            throw new Error(`Cannot intercept packet '${packetName}' - this packet is restricted by safe mode (read-only).`);
+        }
+        
+        const wrappedHandler = (event) => {
+            if (!canModify) {
+                const readOnlyEvent = {
+                    data: event.data,
+                    meta: event.meta,
+                    cancel: () => {
+                        throw new Error(`Cannot cancel packet '${packetName}' - use api.intercept() instead of api.on() for packet modification.`);
+                    },
+                    modify: () => {
+                        throw new Error(`Cannot modify packet '${packetName}' - use api.intercept() instead of api.on() for packet modification.`);
+                    }
+                };
+                handler(readOnlyEvent);
+            } else {
+                handler(event);
+            }
+        };
+        
+        this.registerPacketInterceptor(direction, [packetName], wrappedHandler);
+        
+        return () => {
+            this.unregisterPacketInterceptor(direction, [packetName], wrappedHandler);
         };
     }
     
@@ -119,14 +175,7 @@ class Events extends EventEmitter {
         if (!this.packetInterceptors.has(direction)) {
             throw new Error(`Invalid direction: ${direction}. Must be 'server' or 'client'`);
         }
-        
-        const restrictedSet = this.restrictedPackets[direction];
-        for (const packetName of packetNames) {
-            if (restrictedSet.has(packetName)) {
-                throw new Error(`Packet '${packetName}' is restricted and cannot be intercepted for security reasons (prevents anticheat flags)`);
-            }
-        }
-        
+
         const directionMap = this.packetInterceptors.get(direction);
         
         for (const packetName of packetNames) {
@@ -168,14 +217,52 @@ class Events extends EventEmitter {
         return Array.from(directionMap.get(packetName));
     }
     
-    // allowed packets for interception
-    getAllowedPackets(direction) {
-        const commonSafePackets = {
-            client: ['chat'],
-            server: ['chat', 'title', 'subtitle', 'actionbar', 'player_list_item', 'teams', 'scoreboard_objective', 'scoreboard_score', 'sound_effect', 'named_sound_effect']
+    canModifyPacket(direction, packetName) {
+        const restrictedSet = this.restrictedPackets[direction];
+        return !restrictedSet.has(packetName);
+    }
+    
+    createPacketEvent(direction, packetName, data, meta) {
+        const canModify = this.canModifyPacket(direction, packetName);
+        let cancelled = false;
+        let modified = false;
+        let modifiedData = null;
+        
+        const event = {
+            data,
+            meta,
+            cancelled: false,
+            modified: false,
+            
+            cancel: () => {
+                if (!canModify) {
+                    throw new Error(`Cannot cancel packet '${packetName}' - this packet is restricted by safe mode (read-only).`);
+                }
+                cancelled = true;
+                event.cancelled = true;
+            },
+            
+            modify: (newData) => {
+                if (!canModify) {
+                    throw new Error(`Cannot modify packet '${packetName}' - this packet is restricted by safe mode (read-only).`);
+                }
+                modified = true;
+                modifiedData = newData;
+                event.modified = true;
+                event.data = newData;
+            },
+            
+            isCancelled: () => cancelled,
+            isModified: () => modified,
+            getModifiedData: () => modifiedData
         };
         
-        return commonSafePackets[direction] || [];
+        return event;
+    }
+    
+    getAllowedPackets(direction) {
+        const allPackets = Object.keys(this.restrictedPackets[direction] || {});
+        return allPackets.filter(packet => this.canModifyPacket(direction, packet));
     }
 }
 

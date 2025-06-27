@@ -1,6 +1,6 @@
 # Starfish Proxy
 
-A personal Minecraft proxy server with Microsoft authentication, dynamic server switching, and advanced plugin system.
+A personal Minecraft proxy server designed for use with Hypixel, with an advanced plugin system.
 
 ## TODO
 
@@ -27,19 +27,12 @@ A personal Minecraft proxy server with Microsoft authentication, dynamic server 
 
 #### Denicker
 **Chat/tab indicators for nicks (resolves nicks when the player uses their player skin)**
-- FEATURE COMPLETE
-- Change config options
+- COMPLETE
 
 #### BW-Stats
 **Chat/tab stats for players at the start of your bedwars game**
 - Haven't started
 
-## Features
-
-- Single-player personal proxy (runs locally, supports one player)
-- Automatic Microsoft account authentication with caching
-- Dynamic server switching without restarting
-- Advanced plugin system with anticheat and denicker included
 
 ## Quick Start
 
@@ -53,20 +46,37 @@ A personal Minecraft proxy server with Microsoft authentication, dynamic server 
    - Complete Microsoft login in the browser that opens automatically
    - Reconnect after authentication completes
 
-### Installation
+### Development
 
+1. Install Node.js
 ```bash
 npm install
 ```
 
-### Usage
-
-1. Start the proxy:
+2. Start the proxy:
 ```bash
 node src/proxy.js
 ```
 
-2. Connect with any Minecraft 1.8.9 Client:
+3. Connect with any Minecraft 1.8.9 Client:
+   - Add server: `localhost:25565` 
+   - Connect to trigger authentication
+   - Complete Microsoft login in the browser that opens automatically
+   - Reconnect after authentication completes
+
+### Building
+
+1. Install Node.js
+```bash
+npm install
+```
+
+2. Start the proxy:
+```bash
+node build.js
+```
+
+3. Connect with any Minecraft 1.8.9 Client:
    - Add server: `localhost:25565` 
    - Connect to trigger authentication
    - Complete Microsoft login in the browser that opens automatically
@@ -84,21 +94,7 @@ All commands are used in-game via chat. Commands use module prefixes:
 - `/proxy addserver <name> <host:port>` - Add a server to your saved list
 - `/proxy removeserver <name>` - Remove a server from your saved list
 - `/proxy reauth` - Clear authentication cache and re-authenticate
-- `/proxy plugins` - List all loaded plugins and their status
-
-### Anticheat Commands
-
-Advanced cheater detection system with multiple behavioral checks:
-
-- `/anticheat config` - Interactive config menu with enable/disable, debug, and all anticheat settings
-
-Available checks: `NoSlowA`, `AutoBlockA`, `EagleA`, `ScaffoldA`, `ScaffoldB`, `TowerA`
-
-### Denicker Commands
-
-Detects nicked (disguised) players by analyzing skin data:
-
-- `/denicker config` - Interactive config menu with enable/disable, debug, and denicker settings
+- `/proxy plugins` - List all loaded plugins and their command prefix
 
 ### Help & Config System
 
@@ -106,8 +102,6 @@ Each plugin automatically gets standardized help and config commands:
 - `/plugin-name help` - Show all commands with pagination
 - `/plugin-name config` - Interactive config menu with pagination
 - `/proxy help` - Show proxy commands
-- `/anticheat help` - Show anticheat commands  
-- `/denicker help` - Show denicker commands
 
 ## Configuration
 
@@ -131,84 +125,28 @@ Server changes made via `/proxy server` commands are automatically saved.
 ## File Structure
 
 ```
-starfish-proxy/
-├── src/
-│   ├── proxy.js
-│   ├── session.js
-│   ├── command-handler.js
-│   ├── plugin-api.js
-│   └── storage.js
-├── scripts/
-│   ├── anticheat.js
-│   └── denicker.js
-├── data/
-│   └── config/
-└── auth_cache/
-```
-
-## Server Switching
-
-Example server switching workflow:
-
-```
-/proxy server hypixel                    # Switch to predefined server
-/proxy server play.example.com:25565     # Switch to custom server
-/proxy addserver myserver mc.test.com    # Save a server for later
-/proxy server myserver                   # Use saved server
-```
-
-After switching, Starfish Proxy will disconnect you with a message to reconnect to the new target server.
-
-## Included Plugins
-
-### Anticheat System
-Advanced behavioral analysis system that detects various cheating patterns:
-
-**Detection Types:**
-- **NoSlowA**: Detects sprinting while using items that should slow movement
-- **AutoBlockA**: Detects attacking while blocking with sword
-- **EagleA**: Detects diagonal double-shifting scaffold patterns
-- **ScaffoldA**: Detects blatant scaffold with fast movement
-- **ScaffoldB**: Detects high-speed backward bridging with air time (keep-y behavior)
-- **TowerA**: Detects ascending faster than normal while placing blocks
-
-**Features:**
-- Configurable violation levels and alert cooldowns
-- Sound notifications
-- Per-check enable/disable controls
-
-### Denicker System  
-Detects nicked (disguised) players through skin data analysis:
-
-**Features:**
-- Automatic skin hash analysis against known nick skins
-- Real username extraction from texture data
-
-**Alert Format:**
-```
-[Starfish-DN] BlueRealName is nicked as BluePlayer.
-[Starfish-AC] RedPlayer flagged ScaffoldA (VL: 15)
+todo
 ```
 
 ## Custom Plugins
 
-The proxy supports custom plugins placed in the `scripts/` directory. Each `.js` file is automatically loaded.
+The proxy supports custom plugins placed in the `plugins/` directory. Each `.js` file is automatically loaded.
 
 ### Basic Plugin Structure
 
 ```javascript
 module.exports = (api) => {
-    // register plugin metadata (this is all that's required!)
+    // register plugin metadata
     api.metadata({
         name: 'my-plugin',
         displayName: 'My Plugin',
-        prefix: '§cMP',
-        version: '1.0.0',
+        prefix: '§cMP', // [Starfish-MP]
+        version: 'x.y.z', // minor version (y) must match proxy
         author: 'Your Name',
         description: 'Plugin description'
     });
     
-    // optionally define config schema for plugin-specific settings
+    // define config schema for plugin-specific settings
     api.configSchema([
         {
             label: 'My Plugin Settings',
@@ -225,7 +163,9 @@ module.exports = (api) => {
         }
     ]);
     
-    // register commands (optional)
+    // config command will automatically be created based on provided schema
+    
+    // register additionalcommands
     api.commands((registry) => {
         const { command } = registry;
         
@@ -235,11 +175,9 @@ module.exports = (api) => {
                 ctx.send('§aMy Plugin is running!');
             });
             
-        // Config command is automatic! Every plugin gets:
-        // /my-plugin config - with enable/disable, debug, reset, and custom options
     });
     
-    // observe player events (recommended for most plugins)
+    // observe player events
     api.on('player.move', (data) => {
         api.log(`Player ${data.player.name} moved to ${data.position.x}, ${data.position.y}, ${data.position.z}`);
     });
@@ -251,7 +189,7 @@ module.exports = (api) => {
         }
     });
     
-    // handle plugin restoration (when re-enabled after being disabled)
+    // handle plugin restoration (re-enabled after being disabled)
     api.on('plugin.restored', (data) => {
         if (data.pluginName === 'my-plugin') {
             // plugin was just re-enabled, access current world state
@@ -262,13 +200,10 @@ module.exports = (api) => {
 };
 ```
 
-### Performance-First Design
+### Plugin API
 
-**For best performance, most plugins should use observation-only events.** The proxy uses a fast-path forwarding system that immediately forwards packets to the client while handling plugin events asynchronously. This provides optimal latency for gameplay.
-
-### Packet Interception API
-
-When you need to **modify or cancel packets** (rare cases), use the packet interception API:
+When you need to **listen, modify, or cancel packets**, use the plugin packet API.
+Safe packets can be modified or cancelled, but many packets are read-only to ensure the proxy and its plugins are safe to use on Hypixel.
 
 ```javascript
 module.exports = (api) => {
@@ -277,7 +212,7 @@ module.exports = (api) => {
         displayName: 'Packet Modifier'
     });
     
-    // intercept server→client chat packets (safe)
+    // intercept server→client chat packets
     const unsubscribe = api.interceptPackets({
         direction: 'server',  // 'server' or 'client'
         packets: ['chat']     // array of packet names
@@ -297,6 +232,18 @@ module.exports = (api) => {
         }
     });
     
+    // observe movement packets (read-only)
+    const observeMovement = api.interceptPackets({
+        direction: 'client',
+        packets: ['position', 'look'] // can listen to ANY packet
+    }, (event) => {
+        // observe position data (always works)
+        api.log(`Player moved to: ${event.data.x}, ${event.data.y}, ${event.data.z}`);
+        
+        // event.cancel(); // would throw error - movement packets are read-only
+        // event.modify({}); // would throw error - movement packets are read-only
+    });
+    
     // cleanup when plugin unloads
     return { cleanup: () => unsubscribe() };
 };
@@ -304,29 +251,29 @@ module.exports = (api) => {
 
 #### Security Restrictions
 
-**For security and anticheat protection, most packets are restricted from interception.** Only cosmetic/safe packets can be intercepted:
+**Plugins can LISTEN to any packet, but can only MODIFY safe packets:**
 
-**Allowed Packets:**
+**Safe for Modification:**
 - **Server→Client**: `chat`, `title`, `subtitle`, `sound_effect`, `named_sound_effect`, `player_list_item`, `teams`, `scoreboard_*`
 - **Client→Server**: `chat` (only)
 
-**Restricted Packets (Will throw error if attempted):**
+**Read-Only (Cannot Modify/Cancel):**
 - **Movement**: `position`, `position_look`, `look`, `entity_action` 
 - **Combat**: `arm_animation`, `use_entity`, `entity_status`
 - **Blocks**: `block_place`, `block_dig`, `player_digging`
-- **Inventory**: `held_item_slot`, `window_click`, `set_slot`
+- **Inventory**: `held_item_slot`, `window_click`, `set_slot` // TODO: remove safe packets from restricted list
 - **Entity/World State**: `entity_teleport`, `map_chunk`, `block_change`
-- **And many others** - see console error for full list
+- **And many others**
 
-These restrictions prevent plugins from triggering Hypixel's anticheat systems.
+Attempting to call `event.cancel()` or `event.modify()` on restricted packets will throw an error.
 
 ### API Reference
 
-**Observation Events (Fast Path - Recommended):**
+**Observation Events (Use for Most Cases):**
 - `api.on(event, handler)` - Listen to game events without affecting packet flow
 - Events: `'player.move'`, `'player.action'`, `'chat'`, `'player.join'`, `'player.leave'`, etc.
 
-**Packet Interception (Slower - Use Only When Needed):**
+**Packet Interception (Use Only When Needed):**
 - `api.interceptPackets(options, handler)` - Intercept packets for modification/cancellation
 - `options.direction`: `'server'` (server→client) or `'client'` (client→server)  
 - `options.packets`: Array of packet names to intercept
@@ -351,13 +298,12 @@ These restrictions prevent plugins from triggering Hypixel's anticheat systems.
 - `api.metadata(object)` - **Required** - Register plugin metadata (name, version, etc.)
 - `api.configSchema(array)` - **Optional** - Define custom config options that appear in config menu
 - **Automatic config command** - Every plugin gets `/plugin-name config` with enable/disable/debug/reset
-- **No registration needed** - Config command appears automatically for all plugins
 
 **Automatic Plugin Management:**
-- **Global enable/disable works regardless of plugin code** - All API calls are blocked when disabled
+- **Plugins cannot execute code when disabled**
+- **Plugins cannot access proxy internals**
 - **Automatic cleanup on disable**: Removes display names, packet interceptors, and modifications
 - **State restoration on enable**: Plugins receive current world state via `plugin.restored` event
-- **No developer effort required** - Works for any plugin automatically
 
 **Other Methods:**
 - `api.chat(message)` - Send chat message to player
@@ -376,21 +322,177 @@ These restrictions prevent plugins from triggering Hypixel's anticheat systems.
 
 ### Example Plugins
 
-See `scripts/example-packet-interceptor.js` for a complete example demonstrating both observation and interception patterns.
+See `plugins/example-plugin.js` for a complete example demonstrating both observation and interception patterns.
 
-## Authentication
+## Plugin API Reference
 
-- Authentication tokens are cached in `auth_cache/<username>/` directories
-- Use `/proxy reauth` to clear cache and re-authenticate
-- Browser opens automatically for Microsoft authentication
-- Supports offline mode for initial authentication, then switches to online mode
+### Configuration & Metadata
 
-## Building
+```javascript
+api.metadata({ name: 'MyPlugin', version: '1.0.0', description: 'Plugin description' })
+api.configSchema(schemaArray)
+api.config.get(key)           // Get config value
+api.config.set(key, value)    // Set config value
+api.initializeConfig(schema)
+api.saveCurrentConfig()
 
-To build a standalone executable:
-
-```bash
-node build.js
+// Properties
+api.debug                     // Boolean - debug mode state
 ```
 
-This creates a single executable file that includes all dependencies.
+### Events & Communication
+
+```javascript
+// Events
+api.on(event, handler)
+api.emit(event, data)
+api.interceptPackets({ direction: 'server'|'client', packets: [...] }, handler) // observe ANY packet, modify safe only
+api.everyTick(callback)
+api.onWorldChange(callback)
+
+// Chat & Communication
+api.chat(message)
+api.sound(name, x, y, z, volume?, pitch?)
+api.sendTitle(title, subtitle?, fadeIn?, stay?, fadeOut?)
+api.sendActionBar(text)
+api.sendParticle(particleId, longDistance, x, y, z, offsetX?, offsetY?, offsetZ?, particleData?, particleCount?, data?)
+
+// Logging
+api.log(message)
+api.debugLog(message)
+```
+
+### Player Data Access
+
+```javascript
+// Properties
+api.players                   // Array of all players
+
+// Query Methods
+api.getPlayer(uuid)
+api.getPlayerByName(name)
+api.getPlayerInfo(uuid)
+api.calculateDistance(pos1, pos2)
+api.getPlayersWithinDistance(position, distance)
+api.getPlayersInTeam(teamName)
+```
+
+### World Data Access
+
+```javascript
+api.getTeams()               // Array of team objects
+api.getPlayerTeam(playerName) // Team object or null
+```
+
+### Packet Sending Methods
+
+**Most methods are disabled by safe mode, to prevent the possibility of illegal modifications.**
+
+#### Server Administration
+```javascript
+api.kick(reason)                                    // disabled by safe mode
+api.sendKeepAlive(keepAliveId)
+api.sendTabComplete(matches)
+api.sendCustomPayload(channel, data)
+api.sendLogin(entityId, gameMode, dimension, ...)   // disabled by safe mode
+```
+
+#### Player State
+```javascript
+api.sendHealth(health, food, foodSaturation)       // disabled by safe mode
+api.sendExperience(experienceBar, level, total)    // disabled by safe mode
+api.sendPosition(x, y, z, yaw, pitch, flags?)      // disabled by safe mode
+api.sendAbilities(flags, flyingSpeed?, walkSpeed?) // disabled by safe mode
+api.sendPlayerInfo(action, data)
+```
+
+#### Entity Management
+```javascript
+// Spawning (disabled by safe mode)
+api.spawnPlayer(entityId, playerUUID, x, y, z, yaw, pitch, currentItem, metadata?)
+api.spawnLiving(entityId, type, x, y, z, yaw, pitch, headPitch, vX?, vY?, vZ?, metadata?)
+api.spawnObject(entityId, type, x, y, z, pitch, yaw, objectData, vX?, vY?, vZ?)
+api.spawnExperienceOrb(entityId, x, y, z, count)
+
+// Movement (disabled by safe mode)
+api.setEntityVelocity(entityId, velocityX, velocityY, velocityZ)
+api.teleportEntity(entityId, x, y, z, yaw, pitch, onGround?)
+api.moveEntity(entityId, dX, dY, dZ, onGround?)
+api.setEntityLook(entityId, yaw, pitch, onGround?)
+api.setEntityLookAndMove(entityId, dX, dY, dZ, yaw, pitch, onGround?)
+api.setEntityHeadRotation(entityId, headYaw)
+
+// State (disabled by safe mode)
+api.setEntityEquipment(entityId, slot, item)
+api.addEntityEffect(entityId, effectId, amplifier, duration, hideParticles?)
+api.removeEntityEffect(entityId, effectId)
+api.setEntityStatus(entityId, entityStatus)
+api.setEntityMetadata(entityId, metadata)
+api.animateEntity(entityId, animation)
+api.collectEntity(collectedEntityId, collectorEntityId)
+api.attachEntity(entityId, vehicleId, leash?)
+```
+
+#### Inventory/GUI Management
+```javascript
+// Windows (disabled by safe mode)
+api.openWindow(windowId, inventoryType, windowTitle, slotCount)
+api.closeWindow(windowId)
+api.setSlot(windowId, slot, item)
+api.setWindowItems(windowId, items)
+api.sendTransaction(windowId, action, accepted)
+api.sendCraftProgress(windowId, property, value)
+api.setHeldItemSlot(slot)
+api.creativeInventoryAction(slot, item)
+api.enchantItem(windowId, enchantment)
+
+// Helpers (disabled by safe mode)
+api.createChest(title, size?)
+api.createHopper(title)
+api.createDispenser(title)
+api.fillWindow(windowId, item)
+api.clearWindow(windowId)
+```
+
+#### World Manipulation
+```javascript
+// World (disabled by safe mode)
+api.sendExplosion(x, y, z, radius, records?, playerMotionX?, playerMotionY?, playerMotionZ?)
+api.sendBlockChange(location, type)
+api.sendMultiBlockChange(chunkX, chunkZ, records)
+api.sendWorldEvent(effectId, location, data, disableRelativeVolume?)
+api.sendTimeUpdate(age, time)
+api.sendSpawnPosition(x, y, z)
+api.sendGameStateChange(reason, gameMode)
+
+// Scoreboard
+api.sendScoreboardObjective(objectiveName, mode, objectiveValue?, type?)
+api.sendScoreboardScore(itemName, action, scoreName, value?)
+api.sendScoreboardDisplay(position, scoreName)
+api.sendTeams(team, mode, name?, prefix?, suffix?, friendlyFire?, nameTagVisibility?, color?, players?)
+```
+
+### Display Names & UI
+
+```javascript
+api.setCustomDisplayName(uuid, displayName)
+api.clearCustomDisplayName(uuid)
+api.updatePlayerList()
+api.clearAllCustomDisplayNames()
+```
+
+### Commands
+
+```javascript
+api.commands({
+    'mycommand': {
+        description: 'Command description',
+        action: (args, player, api) => {
+            // Command logic
+        }
+    }
+})
+```
+
+module.exports = { init };
+```

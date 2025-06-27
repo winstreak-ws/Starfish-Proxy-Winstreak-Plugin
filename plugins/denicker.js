@@ -128,8 +128,6 @@ class Denicker {
     }
 
     onWorldChange(event) {
-        if (!this.api.enabled) return;
-        
         this.reset();  
         this.api.clearAllCustomDisplayNames();
     }
@@ -154,8 +152,6 @@ class Denicker {
     }
 
     onTick() {
-        if (!this.api.enabled) return;
-
         for (const player of this.api.players) {
             if (!player.name || typeof player.name !== 'string' || player.uuid.charAt(14) !== '1') continue;
 
