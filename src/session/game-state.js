@@ -142,7 +142,7 @@ class GameState {
                 
             case 'rel_entity_move':
             case 'entity_look':
-            case 'entity_look_and_move':
+            case 'entity_move_look':
             case 'entity_teleport':
                 if (this.entities.has(data.entityId)) {
                     const entity = this.entities.get(data.entityId);
@@ -151,12 +151,12 @@ class GameState {
                         entity.position = { x: data.x / 32, y: data.y / 32, z: data.z / 32 };
                         entity.yaw = this.byteToYaw(data.yaw);
                         entity.pitch = this.byteToPitch(data.pitch);
-                    } else if (meta.name === 'rel_entity_move' || meta.name === 'entity_look_and_move') {
+                    } else if (meta.name === 'rel_entity_move' || meta.name === 'entity_move_look') {
                         entity.position.x += data.dX / 32;
                         entity.position.y += data.dY / 32;
                         entity.position.z += data.dZ / 32;
                     }
-                    if (meta.name === 'entity_look' || meta.name === 'entity_look_and_move') {
+                    if (meta.name === 'entity_look' || meta.name === 'entity_move_look') {
                         entity.yaw = this.byteToYaw(data.yaw);
                         entity.pitch = this.byteToPitch(data.pitch);
                     }

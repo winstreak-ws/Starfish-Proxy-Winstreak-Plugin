@@ -197,7 +197,7 @@ class Entities {
         if (!this.proxy.currentPlayer?.client) return false;
         
         try {
-            return this.proxy.currentPlayer.client.write('entity_look_and_move', {
+            return this.proxy.currentPlayer.client.write('entity_move_look', {
                 entityId,
                 dX: Math.floor(dX * 32),
                 dY: Math.floor(dY * 32),

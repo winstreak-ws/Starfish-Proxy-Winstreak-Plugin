@@ -254,7 +254,7 @@ class PlayerSession {
     }
 
     handleServerPacket(data, meta) {    
-        const criticalMovementPackets = ['entity_teleport', 'rel_entity_move', 'entity_look', 'entity_look_and_move', 'entity_velocity', 'entity_head_rotation'];
+        const criticalMovementPackets = ['entity_teleport', 'rel_entity_move', 'entity_look', 'entity_move_look', 'entity_velocity', 'entity_head_rotation'];
         if (criticalMovementPackets.includes(meta.name)) {
             if (this.client.state === mc.states.PLAY) {
                 this.client.write(meta.name, data);
@@ -335,10 +335,10 @@ class PlayerSession {
             switch(meta.name) {
                 case 'rel_entity_move':
                 case 'entity_look':
-                case 'entity_look_and_move':
+                case 'entity_move_look':
                 case 'entity_teleport':
                     if (entity.position) {
-                        const rotation = (meta.name === 'entity_look' || meta.name === 'entity_look_and_move' || meta.name === 'entity_teleport') 
+                        const rotation = (meta.name === 'entity_look' || meta.name === 'entity_move_look' || meta.name === 'entity_teleport') 
                             ? { yaw: entity.yaw || 0, pitch: entity.pitch || 0 }
                             : undefined;
                         
@@ -1069,7 +1069,7 @@ class PlayerSession {
                     onGround: data.onGround
                 });
                 break;
-            case 'entity_look_and_move':
+            case 'entity_move_look':
                 this.proxy.pluginAPI.emit('entity.lookAndMove', {
                     entityId: data.entityId,
                     delta: { x: data.dX / 32, y: data.dY / 32, z: data.dZ / 32 },
@@ -1236,10 +1236,10 @@ class PlayerSession {
             switch(meta.name) {
                 case 'rel_entity_move':
                 case 'entity_look':
-                case 'entity_look_and_move':
+                case 'entity_move_look':
                 case 'entity_teleport':
                     if (entity.position) {
-                        const rotation = (meta.name === 'entity_look' || meta.name === 'entity_look_and_move' || meta.name === 'entity_teleport') 
+                        const rotation = (meta.name === 'entity_look' || meta.name === 'entity_move_look' || meta.name === 'entity_teleport') 
                             ? { yaw: entity.yaw || 0, pitch: entity.pitch || 0 }
                             : undefined;
                         

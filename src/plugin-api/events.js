@@ -41,7 +41,7 @@ class Events extends EventEmitter {
                 'entity_teleport',
                 'rel_entity_move',
                 'entity_look',
-                'entity_look_and_move',
+                'entity_move_look',
                 'entity_velocity',
                 'entity_head_rotation',
                 
