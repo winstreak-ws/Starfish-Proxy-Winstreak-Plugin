@@ -250,13 +250,11 @@ class PluginAPI {
                 
                 delete require.cache[require.resolve(pluginPath)];
                 const plugin = require(pluginPath);
-                
-                if (pluginEnabled) {
-                    if (typeof plugin.init === 'function') {
-                        plugin.init(pluginAPI);
-                    } else if (typeof plugin === 'function') {
-                        plugin(pluginAPI);
-                    }
+
+                if (typeof plugin.init === 'function') {
+                    plugin.init(pluginAPI);
+                } else if (typeof plugin === 'function') {
+                    plugin(pluginAPI);
                 }
                 
                 this.loadedPlugins.push({

@@ -66,9 +66,6 @@ module.exports = (api) => {
 
     api.initializeConfig(configSchema);
     api.configSchema(configSchema);
-
-    api.commands((registry) => {
-    });
     
     anticheat.registerHandlers();
     return anticheat;
@@ -83,10 +80,17 @@ const CHECKS = {
         },
         
         check: function(player, config) {
-
             // detect moving too fast while using an item that should cause slowdown
-            // is using slowdown item
-            // is moving over 0.15 blocks per second
+            const isUsingSlowdownItem = player.isUsingItem && (
+                player.isHoldingConsumable() || 
+                player.isHoldingBow() || 
+                (player.isHoldingSword() && player.isUsingItem)
+            );
+            
+            const horizontalSpeed = Math.sqrt(player.velocity.x * player.velocity.x + player.velocity.z * player.velocity.z);
+            const isMovingTooFast = horizontalSpeed > 0.15;
+            
+            const isNoSlow = isUsingSlowdownItem && isMovingTooFast;
             
             if (isNoSlow) {
                 this.addViolation(player, 'NoSlowA');
@@ -108,11 +112,13 @@ const CHECKS = {
         },
         
         check: function(player, config) {
-
-            // detect swinging while using sword
-            // WHEN player swings sword
-            // check if they were blocking sword at the same time
-
+            // detect swinging while actively blocking with sword
+            const isHoldingSword = player.isHoldingSword();
+            const isActivelyBlocking = player.isBlocking && isHoldingSword;
+            const isSwinging = player.swingProgress > 0;
+            
+            const isAutoBlock = isHoldingSword && isActivelyBlocking && isSwinging;
+            
             if (isAutoBlock) {
                 this.addViolation(player, 'AutoBlockA');
                 
@@ -133,15 +139,33 @@ const CHECKS = {
         },
 
         check: function(player, config) {
-
             // detect double-shifting during diagonal bridging (legit scaffold)
-            // looking down (pitch >= 30)
-            // is onGround
-            // swinging block
-            // not moving straight (player must not be moving straight in one horizontal direction- within 15 degrees of any cardinal direction)
-            // moving over 2 blocks horizontally per second
-            // player must have more than 5 shifts per 6 blocks moved
-
+            const isLookingDown = player.pitch >= 30;
+            const isOnGround = player.onGround;
+            const isSwingingBlock = player.swingProgress > 0 && player.heldItem && player.heldItem.blockId;
+            
+            const horizontalSpeed = Math.sqrt(player.velocity.x * player.velocity.x + player.velocity.z * player.velocity.z);
+            const isMovingFast = horizontalSpeed > 2.0;
+            
+            // check if not moving straight (not within 15 degrees of cardinal directions)
+            let movementAngle = Math.atan2(player.velocity.z, player.velocity.x) * 180 / Math.PI;
+            if (movementAngle < 0) movementAngle += 360;
+            const cardinalAngles = [0, 90, 180, 270]; // E, S, W, N
+            const isMovingStraight = cardinalAngles.some(angle => 
+                Math.abs(movementAngle - angle) <= 15 || Math.abs(movementAngle - angle - 360) <= 15
+            );
+            const isMovingDiagonal = !isMovingStraight && horizontalSpeed > 0.1;
+            
+            // count shifts in recent movement (last 6 blocks worth of distance)
+            const currentTime = Date.now();
+            const recentShifts = player.shiftEvents.filter(event => 
+                currentTime - event.timestamp < 3000 && event.type === 'start' // shifts in last 3 seconds
+            );
+            const shiftCount = recentShifts.length;
+            const hasExcessiveShifts = shiftCount > 5 && horizontalSpeed > 1.5;
+            
+            const isEagle = isLookingDown && isOnGround && isSwingingBlock && 
+                           isMovingDiagonal && isMovingFast && hasExcessiveShifts;
 
             if (isEagle) {
                 this.addViolation(player, 'EagleA', 2);
@@ -153,7 +177,6 @@ const CHECKS = {
             } else {
                 this.reduceViolation(player, 'EagleA');
             }
-            
         }
     },
     
@@ -164,14 +187,49 @@ const CHECKS = {
         },
 
         check: function(player, config) {
-            
             // detect high-speed backward bridging
-            // looking down (pitch >= 20)
-            // is onGround
-            // swinging block
-            // player head's pitch or yaw changes once for every block moved
-            // not moving forward
-            // moving over 5 blocks horizontally per second
+            const isLookingDown = player.pitch >= 20;
+            const isOnGround = player.onGround;
+            const isSwingingBlock = player.swingProgress > 0 && player.heldItem && player.heldItem.blockId;
+            
+            const horizontalSpeed = Math.sqrt(player.velocity.x * player.velocity.x + player.velocity.z * player.velocity.z);
+            const isMovingVeryFast = horizontalSpeed > 5.0;
+            
+            // check if moving backward (opposite to look direction)
+            let movementAngle = Math.atan2(player.velocity.z, player.velocity.x) * 180 / Math.PI;
+            if (movementAngle < 0) movementAngle += 360;
+            
+            let lookAngle = player.yaw;
+            if (lookAngle < 0) lookAngle += 360;
+            
+            const angleDifference = Math.abs(movementAngle - lookAngle);
+            const normalizedDiff = Math.min(angleDifference, 360 - angleDifference);
+            const isMovingBackward = normalizedDiff > 90 && normalizedDiff < 270; // not moving forward
+            
+            // check for minimal height change (flat bridging)
+            const verticalSpeed = Math.abs(player.velocity.y);
+            const hasMinimalHeightChange = verticalSpeed < 0.5;
+            
+            // store rotation history for head snap detection
+            if (!player.rotationHistory) player.rotationHistory = [];
+            player.rotationHistory.push({ yaw: player.yaw, pitch: player.pitch, time: Date.now() });
+            if (player.rotationHistory.length > 10) player.rotationHistory.shift();
+            
+            // detect head snaps (rotation changes relative to distance moved)
+            let hasFrequentHeadSnaps = false;
+            if (player.rotationHistory.length >= 5 && horizontalSpeed > 2) {
+                const rotationChanges = player.rotationHistory.slice(-5).reduce((count, current, index, arr) => {
+                    if (index === 0) return 0;
+                    const prev = arr[index - 1];
+                    const yawChange = Math.abs(current.yaw - prev.yaw);
+                    const pitchChange = Math.abs(current.pitch - prev.pitch);
+                    return count + (yawChange > 5 || pitchChange > 5 ? 1 : 0);
+                }, 0);
+                hasFrequentHeadSnaps = rotationChanges >= 3; // 3+ rotation changes in last 5 samples
+            }
+            
+            const isScaffold = isLookingDown && isOnGround && isSwingingBlock && 
+                              isMovingBackward && isMovingVeryFast && hasMinimalHeightChange && hasFrequentHeadSnaps;
             
             if (isScaffold) {
                 this.addViolation(player, 'ScaffoldA', 2);
@@ -193,14 +251,66 @@ const CHECKS = {
         },
 
         check: function(player, config) {
-            
             // detect high-speed backward bridging with air time (typical of keep-y scaffold or telly scaffold)
-            // looking down (pitch >= 20)
-            // ratio of onGround to !onGround is less than 0.25
-            // swinging block
-            // not moving forward
-            // moving over 5.5 blocks horizontally per second
-            // vertical distance increases by less than 1 block for every horizontal distance increase of 3 blocks
+            const isLookingDown = player.pitch >= 20;
+            const isSwingingBlock = player.swingProgress > 0 && player.heldItem && player.heldItem.blockId;
+            
+            const horizontalSpeed = Math.sqrt(player.velocity.x * player.velocity.x + player.velocity.z * player.velocity.z);
+            const isMovingVeryFast = horizontalSpeed > 5;
+            
+            // check if moving backward (not forward)
+            let movementAngle = Math.atan2(player.velocity.z, player.velocity.x) * 180 / Math.PI;
+            if (movementAngle < 0) movementAngle += 360;
+            
+            let lookAngle = player.yaw;
+            if (lookAngle < 0) lookAngle += 360;
+            
+            const angleDifference = Math.abs(movementAngle - lookAngle);
+            const normalizedDiff = Math.min(angleDifference, 360 - angleDifference);
+            const isMovingBackward = normalizedDiff > 90 && normalizedDiff < 270;
+            
+            // track ground state history for air time ratio calculation
+            if (!player.groundHistory) player.groundHistory = [];
+            player.groundHistory.push({ onGround: player.onGround, time: Date.now() });
+            if (player.groundHistory.length > 20) player.groundHistory.shift();
+            
+            // calculate air time ratio (onGround to !onGround ratio should be less than 0.25)
+            let hasExcessiveAirTime = false;
+            if (player.groundHistory.length >= 10) {
+                const groundCount = player.groundHistory.filter(state => state.onGround).length;
+                const airCount = player.groundHistory.filter(state => !state.onGround).length;
+                const groundToAirRatio = airCount > 0 ? groundCount / airCount : 1;
+                hasExcessiveAirTime = groundToAirRatio < 0.25 && airCount > 3;
+            }
+            
+            // track position history for vertical to horizontal movement ratio
+            if (!player.movementHistory) player.movementHistory = [];
+            player.movementHistory.push({ 
+                x: player.position.x, 
+                y: player.position.y, 
+                z: player.position.z, 
+                time: Date.now() 
+            });
+            if (player.movementHistory.length > 15) player.movementHistory.shift();
+            
+            // check if vertical distance increases by less than 1 block for every 3 horizontal blocks
+            let hasLowVerticalMovement = false;
+            if (player.movementHistory.length >= 10) {
+                const start = player.movementHistory[0];
+                const end = player.movementHistory[player.movementHistory.length - 1];
+                const horizontalDistance = Math.sqrt(
+                    Math.pow(end.x - start.x, 2) + Math.pow(end.z - start.z, 2)
+                );
+                const verticalDistance = Math.abs(end.y - start.y);
+                
+                if (horizontalDistance >= 3) {
+                    const verticalRatio = verticalDistance / (horizontalDistance / 3);
+                    hasLowVerticalMovement = verticalRatio < 1;
+                }
+            }
+            
+            const isScaffold = isLookingDown && isSwingingBlock && isMovingBackward && 
+                              isMovingVeryFast && hasExcessiveAirTime && hasLowVerticalMovement;
             
             if (isScaffold) {
                 this.addViolation(player, 'ScaffoldB');
@@ -222,13 +332,20 @@ const CHECKS = {
         },
         
         check: function(player, config) {
+            // detect towering up much faster than normal
+            const isLookingDown = player.pitch >= 30;
+            const isSwingingBlock = player.swingProgress > 0 && player.heldItem && player.heldItem.blockId;
+            const hasNoJumpBoost = !player.hasJumpBoost;
             
-            // detect towering up much faster than normal.
-            // looking down (pitch >= 30)
-            // swinging block
-            // moving over 5 blocks vertically per second
-            // does NOT have jump boost
-            // did NOT take damage within 10 ticks before towering up
+            const verticalSpeed = player.velocity.y;
+            const isAscendingFast = verticalSpeed > 5.0;
+            
+            // use proper damage detection from entity_status packet
+            const currentTime = Date.now();
+            const hasRecentDamage = player.lastDamaged > 0 && (currentTime - player.lastDamaged) < 500; // 500ms / ~10 ticks
+
+            const isTower = isLookingDown && isSwingingBlock && isAscendingFast && 
+                           hasNoJumpBoost && !hasRecentDamage;
 
             if (isTower) {
                 this.addViolation(player, 'TowerA', 1);
@@ -261,7 +378,6 @@ class PlayerData {
         
         this.position = { x: 0, y: 0, z: 0 };
         this.lastPosition = { x: 0, y: 0, z: 0 };
-        this.previousPositions = [];
         this.onGround = true;
         this.lastOnGround = true;
         
@@ -274,10 +390,13 @@ class PlayerData {
         this.isUsingItem = false;
         this.swingProgress = 0;
         
-        this.ticksExisted = 0;
-        this.lastSwingTick = 0;
-        this.lastCrouchTick = 0;
-        this.lastStopCrouchTick = 0;
+        this.lastSwingTime = 0;
+        this.lastCrouchTime = 0;
+        this.lastStopCrouchTime = 0;
+        
+        // simplified movement tracking
+        this.lastPositionData = null;
+        this.velocity = { x: 0, y: 0, z: 0 };
         
         this.violations = {};
         this.lastAlerts = {};
@@ -297,6 +416,11 @@ class PlayerData {
         
         this.lastSprinting = false;
         this.lastUsing = false;
+        this.lastDamaged = 0;
+        
+        // precise tracking for autoblock detection
+        this.isBlocking = false;
+        this.blockingStartTime = 0;
     }
     
     updatePosition(x, y, z, onGround, yaw = null, pitch = null) {
@@ -307,14 +431,29 @@ class PlayerData {
         if (yaw !== null) this.yaw = yaw;
         if (pitch !== null) this.pitch = pitch;
         
-        const posData = { x, y, z, tick: this.ticksExisted, onGround };
-        posData.yaw = this.yaw;
-        posData.pitch = this.pitch;
+        // calculate velocity using simplified approach from debugger
+        const currentTime = Date.now();
+        let calculatedVelocity = { x: 0, y: 0, z: 0 };
         
-        this.previousPositions.push(posData);
-        if (this.previousPositions.length > 20) {
-            this.previousPositions.shift();
+        if (this.lastPositionData) {
+            const timeDelta = (currentTime - this.lastPositionData.timestamp) / 1000;
+            
+            if (timeDelta > 0) {
+                calculatedVelocity = {
+                    x: (x - this.lastPositionData.position.x) / timeDelta,
+                    y: (y - this.lastPositionData.position.y) / timeDelta,
+                    z: (z - this.lastPositionData.position.z) / timeDelta
+                };
+            }
         }
+        
+        this.velocity = calculatedVelocity;
+        
+        // store current position and timestamp for next calculation
+        this.lastPositionData = {
+            position: { x, y, z },
+            timestamp: currentTime
+        };
         
         this.lastOnGround = onGround;
     }
@@ -451,6 +590,10 @@ class AnticheatSystem {
             this.handleRemoveEntityEffect(event.data);
         });
         
+        this.unsubscribeEntityStatus = this.api.on('packet:server:entity_status', (event) => {
+            this.handleEntityStatus(event.data);
+        });
+        
         this.unsubscribePosition = this.api.on('packet:client:position', (event) => {
             this.userPosition = { x: event.data.x, y: event.data.y, z: event.data.z };
         });
@@ -476,7 +619,6 @@ class AnticheatSystem {
         );
         
         this.runChecks(player);
-        player.tick();
     }
     
     handlePlayerAction(event) {
@@ -487,18 +629,20 @@ class AnticheatSystem {
         
         if (event.type === 'swing') {
             player.swingProgress = 6;
-            player.lastSwingTick = player.ticksExisted;
+            player.lastSwingTime = Date.now();
             player.lastSwingItem = player.heldItem;
+
         } else if (event.type === 'crouch') {
             const wasCrouching = player.isCrouching;
             player.isCrouching = event.value;
+            const currentTime = Date.now();
             
             if (player.isCrouching && !wasCrouching) {
-                player.lastCrouchTick = player.ticksExisted;
-                player.currentShiftStart = player.ticksExisted;
+                player.lastCrouchTime = currentTime;
+                player.currentShiftStart = currentTime;
                 player.shiftEvents.push({
                     type: 'start',
-                    tick: player.ticksExisted,
+                    timestamp: currentTime,
                     position: { ...player.position }
                 });
                 
@@ -506,11 +650,11 @@ class AnticheatSystem {
                     player.shiftEvents.shift();
                 }
             } else if (!player.isCrouching && wasCrouching) {
-                player.lastStopCrouchTick = player.ticksExisted;
-                const duration = player.currentShiftStart ? player.ticksExisted - player.currentShiftStart : 0;
+                player.lastStopCrouchTime = currentTime;
+                const duration = player.currentShiftStart ? currentTime - player.currentShiftStart : 0;
                 player.shiftEvents.push({
                     type: 'stop',
-                    tick: player.ticksExisted,
+                    timestamp: currentTime,
                     position: { ...player.position },
                     duration: duration
                 });
@@ -637,7 +781,18 @@ class AnticheatSystem {
             if (entry.key === 0 && entry.type === 0) {
                 const flags = entry.value;
                 
+                const wasUsingItem = player.isUsingItem;
                 player.isUsingItem = !!(flags & 0x10);
+                
+                // track precise blocking state for autoblock detection
+                if (player.isUsingItem && !wasUsingItem && player.isHoldingSword()) {
+                    // started blocking with sword
+                    player.isBlocking = true;
+                    player.blockingStartTime = Date.now();
+                } else if (!player.isUsingItem && wasUsingItem) {
+                    // stopped using item
+                    player.isBlocking = false;
+                }
                 
                 if (player.isUsingItem !== player.lastUsing) {
                     player.lastUsing = player.isUsingItem;
@@ -692,6 +847,15 @@ class AnticheatSystem {
 
         if (data.effectId === 8) { // jump boost
             player.hasJumpBoost = false;
+        }
+    }
+    
+    handleEntityStatus(data) {
+        const player = this.entityToPlayer.get(data.entityId);
+        if (!player) return;
+
+        if (data.entityStatus === 2) { // entity took damage
+            player.lastDamaged = Date.now();
         }
     }
     
@@ -755,6 +919,9 @@ class AnticheatSystem {
         }
         if (this.unsubscribeRemoveEntityEffect) {
             this.unsubscribeRemoveEntityEffect();
+        }
+        if (this.unsubscribeEntityStatus) {
+            this.unsubscribeEntityStatus();
         }
         if (this.unsubscribePosition) {
             this.unsubscribePosition();
