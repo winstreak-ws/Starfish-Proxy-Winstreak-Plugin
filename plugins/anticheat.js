@@ -75,10 +75,6 @@ module.exports = (api) => {
 };
 
 
-// NoSlowA, AutoBlockA, EagleA, and TowerA should be working well- ScaffoldA might work and ScaffoldB does not. getAverageSpeed breaks often and inflates numbers.
-// TODO: fix getAverageSpeed, add damage tick check for TowerA, refine scaffold checks
-
-
 const CHECKS = {
     NoSlowA: {
         config: { 
@@ -87,14 +83,12 @@ const CHECKS = {
         },
         
         check: function(player, config) {
+
             // detect moving too fast while using an item that should cause slowdown
-            const currentSpeed = player.getMovementDistance();
-            const isUsingSlowdownItem = player.isUsingItem && (player.isHoldingConsumable() || player.isHoldingBow() || player.isHoldingSword());
+            // is using slowdown item
+            // is moving over 0.15 blocks per second
             
-            // threshold for detecting NoSlow - normal walking speed is ~0.2, so anything above 0.15 while using slowdown items is suspicious
-            const suspiciousSpeed = 0.15;
-            
-            if (isUsingSlowdownItem && currentSpeed > suspiciousSpeed) {
+            if (isNoSlow) {
                 this.addViolation(player, 'NoSlowA');
                 
                 if (this.shouldAlert(player, 'NoSlowA', config)) {
@@ -114,8 +108,12 @@ const CHECKS = {
         },
         
         check: function(player, config) {
+
             // detect swinging while using sword
-            if (player.isUsingItem && player.swingProgress > 0 && player.isHoldingSword()) {
+            // WHEN player swings sword
+            // check if they were blocking sword at the same time
+
+            if (isAutoBlock) {
                 this.addViolation(player, 'AutoBlockA');
                 
                 if (this.shouldAlert(player, 'AutoBlockA', config)) {
@@ -135,54 +133,27 @@ const CHECKS = {
         },
 
         check: function(player, config) {
+
             // detect double-shifting during diagonal bridging (legit scaffold)
-            const moveDistance = player.getMovementDistance();
-            
-            if (moveDistance < 0.03 || player.shiftEvents.length < 6) {
-                this.reduceViolation(player, 'ScaffoldA');
-                return;
-            }
-            
-            const lookingDown = player.pitch >= 30;
-            const isDiagonal = player.isDiagonalMovement();
-            const hasRecentSwing = player.hasRecentSwing(20);
-            const swungBlock = player.lastSwingWasBlock();
+            // looking down (pitch >= 30)
+            // is onGround
+            // swinging block
+            // not moving straight (player must not be moving straight in one horizontal direction- within 15 degrees of any cardinal direction)
+            // moving over 2 blocks horizontally per second
+            // player must have more than 5 shifts per 6 blocks moved
 
-            let flagged = false;
-            if (lookingDown && isDiagonal && player.onGround && swungBlock && hasRecentSwing) {
+
+            if (isEagle) {
+                this.addViolation(player, 'EagleA', 2);
                 
-                const veryRecentShifts = player.hasRecentShiftEvents(15);
-                
-                if (veryRecentShifts.length >= 3) {
-                    let totalDistance = 0;
-                    for (let i = 1; i < veryRecentShifts.length; i++) {
-                        const prev = veryRecentShifts[i-1].position;
-                        const curr = veryRecentShifts[i].position;
-                        const dist = Math.sqrt(Math.pow(curr.x - prev.x, 2) + Math.pow(curr.z - prev.z, 2));
-                        totalDistance += dist;
-                    }
-                    
-                    const shiftsPerBlock = veryRecentShifts.length / Math.max(totalDistance, 0.5);
-                    const isActivelyDoubleShifting = shiftsPerBlock > 1.25;
-                    
-                    const mostRecentShift = Math.max(...veryRecentShifts.map(s => s.tick));
-                    const wasRecentShift = (player.ticksExisted - mostRecentShift) <= 5;
-                    
-                    if (isActivelyDoubleShifting && wasRecentShift) {
-                        this.addViolation(player, 'EagleA', 2);
-                        
-                        if (this.shouldAlert(player, 'EagleA', config)) {
-                            this.flag(player, 'EagleA', player.violations.EagleA);
-                            this.markAlert(player, 'EagleA');
-                        }
-                        flagged = true;
-                    }
+                if (this.shouldAlert(player, 'EagleA', config)) {
+                    this.flag(player, 'EagleA', player.violations.EagleA);
+                    this.markAlert(player, 'EagleA');
                 }
-            }
-
-            if (!flagged) {
+            } else {
                 this.reduceViolation(player, 'EagleA');
             }
+            
         }
     },
     
@@ -193,24 +164,16 @@ const CHECKS = {
         },
 
         check: function(player, config) {
-            // check if moving over 5 blocks per second
-            const avgSpeedPerSecond = player.getAverageSpeed(10);
-            const fastMovement = avgSpeedPerSecond > 5;
-
-            // this.api.debugLog(`  Average Speed: ${avgSpeedPerSecond} blocks/s`);
             
-            // check if looking down (more than 25 pitch)
-            const lookingDown = player.pitch > 25;
+            // detect high-speed backward bridging
+            // looking down (pitch >= 20)
+            // is onGround
+            // swinging block
+            // player head's pitch or yaw changes once for every block moved
+            // not moving forward
+            // moving over 5 blocks horizontally per second
             
-            // check if placing blocks
-            const hasRecentSwing = player.hasRecentSwing(10);
-            const swungBlock = player.lastSwingWasBlock();
-            const placingBlocks = hasRecentSwing && swungBlock;
-            
-            // check if y level is NOT changing
-            const yNotChanging = player.getYVariance(10) < 0.1;
-            
-            if (fastMovement && lookingDown && placingBlocks && yNotChanging && !player.isCrouching) {
+            if (isScaffold) {
                 this.addViolation(player, 'ScaffoldA', 2);
                 
                 if (this.shouldAlert(player, 'ScaffoldA', config)) {
@@ -230,22 +193,16 @@ const CHECKS = {
         },
 
         check: function(player, config) {
-            // check if moving over 6 blocks per second
-            const avgSpeedPerSecond = player.getAverageSpeed(10);
-            const fastMovement = avgSpeedPerSecond > 6;
             
-            // check if looking down (more than 25 pitch)
-            const lookingDown = player.pitch > 25;
+            // detect high-speed backward bridging with air time (typical of keep-y scaffold or telly scaffold)
+            // looking down (pitch >= 20)
+            // ratio of onGround to !onGround is less than 0.25
+            // swinging block
+            // not moving forward
+            // moving over 5.5 blocks horizontally per second
+            // vertical distance increases by less than 1 block for every horizontal distance increase of 3 blocks
             
-            // check if placing blocks
-            const hasRecentSwing = player.hasRecentSwing(10);
-            const swungBlock = player.lastSwingWasBlock();
-            const placingBlocks = hasRecentSwing && swungBlock;
-            
-            // check if height fluctuates but does NOT increase (keep-y)
-            const keepY = player.isKeepYBehavior(15);
-            
-            if (fastMovement && lookingDown && placingBlocks && keepY && !player.isCrouching) {
+            if (isScaffold) {
                 this.addViolation(player, 'ScaffoldB');
                 
                 if (this.shouldAlert(player, 'ScaffoldB', config)) {
@@ -265,32 +222,16 @@ const CHECKS = {
         },
         
         check: function(player, config) {
-            // detect towering up too fast
-            if (player.hasJumpBoost) {
-                return;
-            }
             
-            if (player.pitch < 30) {
-                this.reduceViolation(player, 'TowerA');
-                return;
-            }
+            // detect towering up much faster than normal.
+            // looking down (pitch >= 30)
+            // swinging block
+            // moving over 5 blocks vertically per second
+            // does NOT have jump boost
+            // did NOT take damage within 10 ticks before towering up
 
-            if (player.previousPositions.length < 6) {
-                return;
-            }
-
-            const hasRecentSwing = player.hasRecentSwing(5);
-            const swungBlock = player.lastSwingWasBlock();
-
-            if (!hasRecentSwing || !swungBlock) {
-                return;
-            }
-
-            const verticalSpeed = player.getVerticalSpeed(6);
-            const isToweringSpeed = verticalSpeed > 0.5;
-
-            if (isToweringSpeed) {
-                this.addViolation(player, 'TowerA', 2);
+            if (isTower) {
+                this.addViolation(player, 'TowerA', 1);
                 
                 if (this.shouldAlert(player, 'TowerA', config)) {
                     this.flag(player, 'TowerA', player.violations.TowerA);
@@ -378,23 +319,6 @@ class PlayerData {
         this.lastOnGround = onGround;
     }
     
-    getMoveYaw() {
-        const dx = this.position.x - this.lastPosition.x;
-        const dz = this.position.z - this.lastPosition.z;
-
-        if (Math.sqrt(dx * dx + dz * dz) < 0.03) { 
-            return null;
-        }
-
-        const moveAngle = -Math.atan2(dx, dz) * (180 / Math.PI);
-
-        let diff = this.yaw - moveAngle;
-
-        diff = ((diff % 360) + 540) % 360 - 180;
-        
-        return diff;
-    }
-    
     isHoldingSword() {
         if (!this.heldItem || !this.heldItem.blockId) return false;
         const swordIds = [267, 268, 272, 276, 283]; // wood, stone, iron, diamond, gold swords
@@ -439,126 +363,6 @@ class PlayerData {
             424  // cooked_mutton
         ];
         return consumableIds.includes(this.heldItem.blockId);
-    }
-    
-    isHoldingBlock() {
-        if (!this.heldItem || !this.heldItem.blockId) return false;
-        return this.heldItem.blockId < 256 && this.heldItem.blockId > 0;
-    }
-    
-    lastSwingWasBlock() {
-        if (!this.lastSwingItem || !this.lastSwingItem.blockId) return false;
-        return this.lastSwingItem.blockId < 256 && this.lastSwingItem.blockId > 0;
-    }
-    
-    hasRecentSwing(maxTicks = 10) {
-        return this.ticksExisted - this.lastSwingTick <= maxTicks;
-    }
-    
-    hasRecentShiftEvents(maxTicks = 15) {
-        return this.shiftEvents.filter(e => 
-            e.type === 'start' && (this.ticksExisted - e.tick) <= maxTicks
-        );
-    }
-    
-    getMovementDistance() {
-        const dx = this.position.x - this.lastPosition.x;
-        const dz = this.position.z - this.lastPosition.z;
-        return Math.sqrt(dx * dx + dz * dz);
-    }
-    
-    isDiagonalMovement() {
-        const dx = this.position.x - this.lastPosition.x;
-        const dz = this.position.z - this.lastPosition.z;
-        const absX = Math.abs(dx);
-        const absZ = Math.abs(dz);
-        return absX > 0.015 && absZ > 0.015 && Math.abs(absX - absZ) < Math.min(absX, absZ) * 0.3;
-    }
-    
-    getAverageSpeed(sampleSize = 15) {
-        const recentPositions = this.previousPositions.slice(-sampleSize);
-        let totalSpeed = 0;
-        let speedSamples = 0;
-        
-        for (let i = 1; i < recentPositions.length; i++) {
-            const current = recentPositions[i];
-            const previous = recentPositions[i - 1];
-            if (current.x !== undefined && previous.x !== undefined && 
-                current.z !== undefined && previous.z !== undefined) {
-                const dx = current.x - previous.x;
-                const dz = current.z - previous.z;
-                const speed2D = Math.sqrt(dx * dx + dz * dz);
-                totalSpeed += speed2D;
-                speedSamples++;
-            }
-        }
-        
-        const avgSpeedPerTick = speedSamples > 0 ? totalSpeed / speedSamples : 0;
-        return avgSpeedPerTick * 10;
-    }
-    
-    getVerticalSpeed(ticksBack = 6) {
-        if (this.previousPositions.length < ticksBack) {
-            return 0;
-        }
-        
-        const currentPos = this.position;
-        const pastPos = this.previousPositions[this.previousPositions.length - ticksBack];
-        const ticksElapsed = this.ticksExisted - pastPos.tick;
-        
-        if (ticksElapsed <= 0) return 0;
-        
-        const deltaY = currentPos.y - pastPos.y;
-        return deltaY / ticksElapsed;
-    }
-    
-    isBackwardMovement() {
-        const moveYaw = this.getMoveYaw();
-        return moveYaw !== null && Math.abs(moveYaw) >= 90;
-    }
-    
-    hasSignificantVerticalMovement(threshold = 1) {
-        if (this.previousPositions.length < 2) return false;
-        const firstPos = this.previousPositions[this.previousPositions.length - 1];
-        const lastPos = this.previousPositions[0];
-        return Math.abs(lastPos.y - firstPos.y) > threshold;
-    }
-    
-    getYVariance(sampleSize = 10) {
-        const recentPositions = this.previousPositions.slice(-sampleSize);
-        if (recentPositions.length < 2) return 0;
-        
-        const yValues = recentPositions.map(pos => pos.y);
-        const avgY = yValues.reduce((sum, y) => sum + y, 0) / yValues.length;
-        const variance = yValues.reduce((sum, y) => sum + Math.pow(y - avgY, 2), 0) / yValues.length;
-        
-        return Math.sqrt(variance);
-    }
-    
-    isKeepYBehavior(sampleSize = 15) {
-        const recentPositions = this.previousPositions.slice(-sampleSize);
-        if (recentPositions.length < 5) return false;
-        
-        const yValues = recentPositions.map(pos => pos.y);
-        const firstY = yValues[0];
-        const lastY = yValues[yValues.length - 1];
-        
-        // check if there's no net height gain (within small tolerance)
-        const noNetGain = Math.abs(lastY - firstY) < 0.2;
-        
-        // check if there's fluctuation (variance indicating jumping movement)
-        const avgY = yValues.reduce((sum, y) => sum + y, 0) / yValues.length;
-        const variance = yValues.reduce((sum, y) => sum + Math.pow(y - avgY, 2), 0) / yValues.length;
-        const hasFluctuation = Math.sqrt(variance) > 0.1;
-        
-        return noNetGain && hasFluctuation;
-    }
-    
-    tick() {
-        this.ticksExisted++;
-        if (this.swingProgress > 0) {
-            this.swingProgress--;
-        }
     }
 }
 

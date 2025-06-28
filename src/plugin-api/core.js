@@ -104,7 +104,7 @@ class Core {
     }
     
         log(message) {
-        const pluginName = this.metadata?.name || 'Proxy';
+        const pluginName = this.metadata?.displayName || 'Proxy';
         const timestamp = new Date().toLocaleTimeString();
         console.log(`[${timestamp}] [${pluginName}] ${message}`);
     }

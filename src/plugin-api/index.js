@@ -190,6 +190,31 @@ class PluginAPI {
         return true;
     }
     
+    _ensureConfigCommandRegistered(pluginName) {
+        if (this.proxy.commandHandler.modules.has(pluginName.toLowerCase())) {
+            return;
+        }
+        
+        this.proxy.commandHandler.register(pluginName, (registry) => {
+        });
+    }
+    
+    _getPluginEnabledState(pluginName) {
+        try {
+            const { getPluginConfigDir } = require('../utils/paths');
+            const configPath = path.join(getPluginConfigDir(), `${pluginName}.config.json`);
+            
+            if (fs.existsSync(configPath)) {
+                const configData = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                return configData.enabled !== false;
+            }
+        } catch (error) {
+            console.log(`Failed to read config for plugin ${pluginName}: ${error.message}`);
+        }
+        
+        return true;
+    }
+    
     loadPlugins() {
         const pluginsDir = getPluginsDir();
         if (!fs.existsSync(pluginsDir)) {
@@ -210,8 +235,10 @@ class PluginAPI {
                     displayName: pluginName.charAt(0).toUpperCase() + pluginName.slice(1)
                 };
                 
+                const pluginEnabled = this._getPluginEnabledState(pluginName);
+                
                 this.pluginStates.set(pluginName, {
-                    enabled: true,
+                    enabled: pluginEnabled,
                     modifications: {
                         displayNames: new Set(),
                         interceptors: new Set(),
@@ -224,22 +251,25 @@ class PluginAPI {
                 delete require.cache[require.resolve(pluginPath)];
                 const plugin = require(pluginPath);
                 
-                if (typeof plugin.init === 'function') {
-                    plugin.init(pluginAPI);
-                } else if (typeof plugin === 'function') {
-                    plugin(pluginAPI);
+                if (pluginEnabled) {
+                    if (typeof plugin.init === 'function') {
+                        plugin.init(pluginAPI);
+                    } else if (typeof plugin === 'function') {
+                        plugin(pluginAPI);
+                    }
                 }
                 
                 this.loadedPlugins.push({
                     name: pluginName,
                     displayName: pluginMetadata.displayName,
                     path: pluginPath,
-                    enabled: true,
+                    enabled: pluginEnabled,
                     official: true,
                     metadata: pluginMetadata
                 });
                 
-                console.log(`Loaded plugin: ${pluginMetadata.displayName}`);
+                const statusText = pluginEnabled ? 'Loaded' : 'Loaded (disabled)';
+                console.log(`${statusText} plugin: ${pluginMetadata.displayName}`);
                 
             } catch (error) {
                 console.error(`Failed to load plugin ${file}:`, error.message);
@@ -271,6 +301,7 @@ class PluginAPI {
             
             configSchema: (schema) => {
                 pluginMetadata.configSchema = schema;
+                this._ensureConfigCommandRegistered(pluginName);
             },
             
             config: pluginCore.config,
