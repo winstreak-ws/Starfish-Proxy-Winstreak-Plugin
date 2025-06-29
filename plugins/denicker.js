@@ -86,7 +86,7 @@ module.exports = (api) => {
         {
             label: 'Add Nicks to Cubelify',
             description: 'Automatically add denicked players to Cubelify.',
-            defaults: { addNicksToCubelify: { enabled: false } },
+            defaults: { addNicksToCubelify: { enabled: true } },
             settings: [
                 {
                     type: 'toggle',

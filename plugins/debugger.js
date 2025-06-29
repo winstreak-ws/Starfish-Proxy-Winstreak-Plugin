@@ -10,7 +10,6 @@ module.exports = (api) => {
         description: 'Advanced debugger/logging system for development',
     });
 
-    // define config schema for debugger settings
     api.configSchema([
         {
             label: 'General Logging',
@@ -100,7 +99,6 @@ module.exports = (api) => {
     const debugSystem = new DebugSystem(api);
     debugSystem.registerHandlers();
 
-    // return cleanup function for proper plugin lifecycle management
     return {
         cleanup: () => {
             debugSystem.cleanup();
@@ -111,8 +109,8 @@ module.exports = (api) => {
 class DebugSystem {
     constructor(api) {
         this.api = api;
-        this.lastStates = new Map(); // track previous states per player
-        this.lastPositions = new Map(); // track previous positions and timestamps for velocity calculation
+        this.lastStates = new Map();
+        this.lastPositions = new Map();
     }
 
     registerHandlers() {
@@ -124,7 +122,6 @@ class DebugSystem {
     }
 
     cleanup() {
-        // clear stored states on plugin cleanup
         this.lastStates.clear();
         this.lastPositions.clear();
     }
@@ -147,12 +144,11 @@ class DebugSystem {
         const currentPos = event.position;
         const playerUuid = player.uuid;
 
-        // calculate velocity based on position changes
         let calculatedVelocity = { x: 0, y: 0, z: 0 };
         const lastPosData = this.lastPositions.get(playerUuid);
         
         if (lastPosData) {
-            const timeDelta = (currentTime - lastPosData.timestamp) / 1000; // convert to seconds
+            const timeDelta = (currentTime - lastPosData.timestamp) / 1000;
             
             if (timeDelta > 0) {
                 calculatedVelocity = {
@@ -163,7 +159,6 @@ class DebugSystem {
             }
         }
 
-        // store current position and timestamp for next calculation
         this.lastPositions.set(playerUuid, {
             position: { x: currentPos.x, y: currentPos.y, z: currentPos.z },
             timestamp: currentTime
@@ -199,10 +194,8 @@ class DebugSystem {
         const action = { type: event.type, value: event.value };
         if (!this.shouldLogPlayer(player)) return;
 
-        // get previous state for this player
         const lastState = this.lastStates.get(player.uuid) || {};
         
-        // get current state value for the specific action
         let currentValue;
         switch (action.type) {
             case 'crouch':
@@ -215,13 +208,11 @@ class DebugSystem {
                 currentValue = player.isUsingItem;
                 break;
             case 'swing':
-                // always log swings since they're momentary actions
                 break;
             default:
                 currentValue = action.value;
         }
 
-        // only log if the state actually changed (or if it's a swing)
         if (action.type === 'swing' || lastState[action.type] !== currentValue) {
             const logData = {
                 event: 'action',
@@ -234,7 +225,6 @@ class DebugSystem {
             this.api.log(`Player Action: ${JSON.stringify(logData)}`);
         }
 
-        // update stored state for this player
         if (!this.lastStates.has(player.uuid)) {
             this.lastStates.set(player.uuid, {});
         }
@@ -267,7 +257,6 @@ class DebugSystem {
 
         this.api.log(`Player Leave: ${JSON.stringify(logData)}`);
         
-        // cleanup stored state for this player
         this.lastStates.delete(player.uuid);
         this.lastPositions.delete(player.uuid);
     }
