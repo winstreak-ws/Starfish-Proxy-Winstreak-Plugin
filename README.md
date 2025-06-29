@@ -9,7 +9,8 @@ A personal Minecraft proxy server designed for use with Hypixel, with an advance
 ### Proxy
 - Test and complete plugin API
    - Add versioning
-- Exitlag compat(?)
+   - Add official plugin system with support for obfuscation and assymetric cryptography
+- Network settings, buffer size, etc.
 
 ### Plugins
 
