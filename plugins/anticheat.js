@@ -88,10 +88,9 @@ const CHECKS = {
                 (player.isHoldingSword() && player.isUsingItem)
             );
             
-            const horizontalSpeed = Math.sqrt(player.velocity.x * player.velocity.x + player.velocity.z * player.velocity.z);
-            const isMovingTooFast = horizontalSpeed > 1.5;
+            const isSprinting = player.isSprinting;
             
-            const isCurrentlyNoSlow = isUsingSlowdownItem && isMovingTooFast;
+            const isCurrentlyNoSlow = isUsingSlowdownItem && isSprinting;
             
             if (!player.noSlowData) {
                 player.noSlowData = {
@@ -203,7 +202,7 @@ const CHECKS = {
         check: function(player, config) {
             const isLookingDown = player.pitch >= 30;
             const isOnGround = player.onGround;
-            const isSwingingBlock = player.swingProgress > 0 && player.heldItem && player.heldItem.blockId;
+            const isSwingingBlock = player.swingProgress > 0 && player.isHoldingBlock();
             
             const horizontalSpeed = Math.sqrt(player.velocity.x * player.velocity.x + player.velocity.z * player.velocity.z);
             const isMovingFast = horizontalSpeed > 2.0;
@@ -255,7 +254,7 @@ const CHECKS = {
             }
             
             const isLookingDown = player.pitch >= 25;
-            const isPlacingBlocks = player.swingProgress > 0 && player.heldItem && player.heldItem.blockId;
+            const isPlacingBlocks = player.swingProgress > 0 && player.isHoldingBlock();
             const isMovingFast = horizontalSpeed > 5.0;
             const isNotSneaking = !player.isCrouching;
             const isFlat = Math.abs(player.velocity.y) < 0.1;
@@ -288,7 +287,7 @@ const CHECKS = {
             const horizontalSpeed = Math.sqrt(player.velocity.x * player.velocity.x + player.velocity.z * player.velocity.z);
             
             const isLookingDown = player.pitch >= 30;
-            const isSwingingBlock = player.swingProgress > 0 && player.heldItem && player.heldItem.blockId;
+            const isSwingingBlock = player.swingProgress > 0 && player.isHoldingBlock();
             const hasNoJumpBoost = !player.hasJumpBoost;
             const isAscendingFast = verticalSpeed > 5.5;
             
@@ -450,19 +449,31 @@ class PlayerData {
         this.lastOnGround = onGround;
     }
     
+    getItemId() {
+        if (!this.heldItem) return null;
+        return this.heldItem.blockId || this.heldItem.itemId || this.heldItem.id || null;
+    }
+    
+    isHoldingBlock() {
+        const itemId = this.getItemId();
+        return itemId && itemId < 256; // Blocks are typically < 256
+    }
+    
     isHoldingSword() {
-        if (!this.heldItem || !this.heldItem.blockId) return false;
+        const itemId = this.getItemId();
+        if (!itemId) return false;
         const swordIds = [267, 268, 272, 276, 283]; // wood, stone, iron, diamond, gold swords
-        return swordIds.includes(this.heldItem.blockId);
+        return swordIds.includes(itemId);
     }
     
     isHoldingBow() {
-        if (!this.heldItem || !this.heldItem.blockId) return false;
-        return this.heldItem.blockId === 261;
+        const itemId = this.getItemId();
+        return itemId === 261;
     }
     
     isHoldingConsumable() {
-        if (!this.heldItem || !this.heldItem.blockId) return false;
+        const itemId = this.getItemId();
+        if (!itemId) return false;
         const consumableIds = [
             260, // apple
             297, // bread
@@ -493,7 +504,7 @@ class PlayerData {
             423, // mutton
             424  // cooked_mutton
         ];
-        return consumableIds.includes(this.heldItem.blockId);
+        return consumableIds.includes(itemId);
     }
 }
 
@@ -501,21 +512,45 @@ class AnticheatSystem {
     constructor(api) {
         this.api = api;
         this.players = new Map();
+        this.playersByUuid = new Map();
         this.entityToPlayer = new Map();
         this.uuidToName = new Map();
         this.uuidToDisplayName = new Map();
         this.userPosition = null;
+
+        this.CONFIG = {};
+        this.refreshConfigConstants();
     }
     
     reset() {
         this.players.clear();
+        this.playersByUuid.clear();
         this.entityToPlayer.clear();
         this.uuidToName.clear();
         this.uuidToDisplayName.clear();
         this.api.debugLog('Cleared all tracked player data.');
     }
     
+    refreshConfigConstants() {
+        this.CONFIG = {};
+        for (const checkName of Object.keys(CHECKS)) {
+            this.CONFIG[checkName] = {
+                enabled: this.api.config.get(`checks.${checkName}.enabled`),
+                vl: this.api.config.get(`checks.${checkName}.vl`),
+                cooldown: this.api.config.get(`checks.${checkName}.cooldown`),
+                sound: this.api.config.get(`checks.${checkName}.sound`)
+            };
+        }
+    }
+    
     registerHandlers() {
+        this.api.everyTick(() => {
+            for (const [uuid, player] of this.playersByUuid) {
+                if (player.swingProgress > 0) {
+                    player.swingProgress = Math.max(0, player.swingProgress - 1);
+                }
+            }
+        });
 
         this.api.on('world.change', () => {
             this.api.debugLog('World change detected, clearing data.');
@@ -677,18 +712,13 @@ class AnticheatSystem {
     }
     
     getOrCreatePlayer(playerData) {
-        let player = null;
-        for (const [name, p] of this.players) {
-            if (p.uuid === playerData.uuid || p.username === playerData.name) {
-                player = p;
-                break;
-            }
-        }
+        let player = this.playersByUuid.get(playerData.uuid);
         
         if (!player) {
             player = new PlayerData(playerData.name, playerData.uuid, playerData.entityId || -1);
             player.displayName = playerData.displayName || playerData.name;
             this.players.set(playerData.name, player);
+            this.playersByUuid.set(playerData.uuid, player);
             if (playerData.entityId) {
                 this.entityToPlayer.set(playerData.entityId, player);
             }
@@ -698,16 +728,16 @@ class AnticheatSystem {
     }
     
     removePlayerByUuid(uuid) {
-        for (const [name, player] of this.players) {
-            if (player.uuid === uuid) {
-                this.players.delete(name);
-                for (const [entityId, p] of this.entityToPlayer) {
-                    if (p.uuid === uuid) {
-                        this.entityToPlayer.delete(entityId);
-                        break;
-                    }
+        const player = this.playersByUuid.get(uuid);
+        if (player) {
+            this.players.delete(player.username);
+            this.playersByUuid.delete(uuid);
+
+            for (const [entityId, p] of this.entityToPlayer) {
+                if (p.uuid === uuid) {
+                    this.entityToPlayer.delete(entityId);
+                    break;
                 }
-                break;
             }
         }
     }
@@ -848,21 +878,15 @@ class AnticheatSystem {
     }
     
     runChecks(player) {
-        Object.keys(CHECKS).forEach(checkName => {
-            const isEnabled = this.api.config.get(`checks.${checkName}.enabled`);
-            if (!isEnabled) return;
+        for (const checkName of Object.keys(CHECKS)) {
+            const checkConfig = this.CONFIG[checkName];
+            if (!checkConfig || !checkConfig.enabled) continue;
             
             const checkDefinition = CHECKS[checkName];
             if (checkDefinition && checkDefinition.check) {
-                const checkConfig = {
-                    enabled: isEnabled,
-                    vl: this.api.config.get(`checks.${checkName}.vl`),
-                    cooldown: this.api.config.get(`checks.${checkName}.cooldown`),
-                    sound: this.api.config.get(`checks.${checkName}.sound`)
-                };
                 checkDefinition.check.call(this, player, checkConfig);
             }
-        });
+        }
     }
     
     flag(player, checkName, vl) {

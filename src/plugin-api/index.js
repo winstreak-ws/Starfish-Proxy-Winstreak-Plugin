@@ -305,7 +305,7 @@ class PluginAPI {
             config: pluginCore.config,
             log: withEnabledCheck(pluginCore.log.bind(pluginCore), 'log'),
             debugLog: withEnabledCheck(pluginCore.debugLog.bind(pluginCore), 'debugLog'),
-            get debug() { return pluginCore.debug; },
+            get debug() { return pluginCore.config.get('debug'); },
             
             initializeConfig: pluginCore.initializeConfig.bind(pluginCore),
             getConfig: () => pluginCore.config,

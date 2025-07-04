@@ -110,7 +110,8 @@ class Core {
     }
 
     debugLog(message) {
-        if (this.debug) {
+        const currentDebug = this.config.get('debug');
+        if (currentDebug) {
             const pluginName = this.metadata?.displayName || 'Proxy';
             const timestamp = new Date().toLocaleTimeString();
             console.log(`[${timestamp}] [${pluginName}] [DEBUG] ${message}`);
