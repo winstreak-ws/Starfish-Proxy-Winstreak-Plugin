@@ -1,7 +1,7 @@
 node_modules/
 .env
-.env.test
 auth_cache/
 build/
 .vscode/
 data/
+config/

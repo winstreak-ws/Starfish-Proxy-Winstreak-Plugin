@@ -31,36 +31,6 @@ if (fs.existsSync(pluginsSource)) {
     fs.cpSync(pluginsSource, pluginsDest, { recursive: true });
 }
 
-const configSource = path.join(__dirname, 'config');
-const configDest = path.join(buildDir, 'config');
-
-if (fs.existsSync(configSource)) {
-    if (fs.existsSync(configDest)) {
-        fs.rmSync(configDest, { recursive: true, force: true });
-    }
-    fs.cpSync(configSource, configDest, { recursive: true });
-}
-
-const dataSource = path.join(__dirname, 'data');
-const dataDest = path.join(buildDir, 'data');
-
-if (fs.existsSync(dataSource)) {
-    if (fs.existsSync(dataDest)) {
-        fs.rmSync(dataDest, { recursive: true, force: true });
-    }
-    fs.cpSync(dataSource, dataDest, { recursive: true });
-}
-
-const authCacheSource = path.join(__dirname, 'auth_cache');
-const authCacheDest = path.join(buildDir, 'auth_cache');
-
-if (fs.existsSync(authCacheSource)) {
-    if (fs.existsSync(authCacheDest)) {
-        fs.rmSync(authCacheDest, { recursive: true, force: true });
-    }
-    fs.cpSync(authCacheSource, authCacheDest, { recursive: true });
-}
-
 try {
     execSync('pkg src/proxy.js --target node18-win-x64 --output build/starfish-proxy.exe', { stdio: 'inherit' });
     console.log('Build completed: build/starfish-proxy.exe');
