@@ -188,10 +188,10 @@ function showConfigMenu({ commandHandler, client, moduleName, config, schema, pa
 
         const isLineFeatureEnabled = mainToggleSetting ? getProperty(config, mainToggleSetting.key) : true;
         const isPluginGloballyEnabled = getProperty(config, 'enabled');
-        const shouldShowAsDark = !isPluginGloballyEnabled || !isLineFeatureEnabled;
+        const isLabelDisabled = !isPluginGloballyEnabled || !isLineFeatureEnabled;
         
         const toggleText = isLineFeatureEnabled ? '[+]' : '[-]';
-        const toggleColor = shouldShowAsDark ? THEME.muted : (isLineFeatureEnabled ? THEME.success : THEME.error);
+        const toggleColor = isLineFeatureEnabled ? THEME.success : THEME.error;
 
         if (mainToggleSetting) {
             const command = `${baseCommand} --set ${mainToggleSetting.key}=${!isLineFeatureEnabled} --page ${currentPage}`;
@@ -231,7 +231,7 @@ function showConfigMenu({ commandHandler, client, moduleName, config, schema, pa
         
         hoverComponents.push({ text: `\n${THEME.text}Click settings in the chat menu to modify them` });
 
-        const lineLabel = new ChatBuilder(commandHandler, client).text(item.label, shouldShowAsDark ? THEME.muted : THEME.secondary);
+        const lineLabel = new ChatBuilder(commandHandler, client).text(item.label, isLabelDisabled ? THEME.muted : THEME.secondary);
         lineLabel._current().hoverEvent = {
             action: 'show_text',
             value: { text: '', extra: hoverComponents }
@@ -258,18 +258,18 @@ function showConfigMenu({ commandHandler, client, moduleName, config, schema, pa
                     if (setting.key === 'debug') {
                         if (settingIndex > 0) chat.text(' | ', THEME.muted);
                         const command = `${baseCommand} --set ${setting.key}=${!currentValue} --page ${currentPage}`;
-                        const debugActiveColor = shouldShowAsDark ? THEME.muted : (currentValue ? THEME.success : THEME.error);
+                        const debugActiveColor = currentValue ? THEME.success : THEME.error;
                         
-                        chat.text('(Debug: ', shouldShowAsDark ? THEME.muted : THEME.text);
+                        chat.text('(Debug: ', THEME.text);
                         chat.runButton(currentValue ? 'ON' : 'OFF', command, setting.description, debugActiveColor);
-                        chat.text(')', shouldShowAsDark ? THEME.muted : THEME.text);
+                        chat.text(')', THEME.text);
                         settingIndex++;
                     }
                     break;
                 case 'soundToggle':
                     if (settingIndex > 0) chat.text(' | ', THEME.muted);
                     const soundCommand = `${baseCommand} --set ${setting.key}=${!currentValue} --page ${currentPage}`;
-                    const soundActiveColor = shouldShowAsDark ? THEME.muted : (currentValue ? THEME.special : THEME.muted);
+                    const soundActiveColor = currentValue ? THEME.special : THEME.muted;
                     
                     chat.runButton('[♪]', soundCommand, setting.description, soundActiveColor);
                     settingIndex++;
@@ -280,14 +280,14 @@ function showConfigMenu({ commandHandler, client, moduleName, config, schema, pa
                     const nextValue = setting.values[(currentIndex + 1) % setting.values.length].value;
                     const command = `${baseCommand} --set ${setting.key}=${nextValue} --page ${currentPage}`;
                     const display = setting.values[currentIndex] || setting.values[0];
-                    const cycleActiveColor = shouldShowAsDark ? THEME.muted : THEME.accent;
+                    const cycleActiveColor = THEME.accent;
                     
-                    chat.text('(', shouldShowAsDark ? THEME.muted : THEME.text);
+                    chat.text('(', THEME.text);
                     if (setting.displayLabel) {
-                        chat.text(`${setting.displayLabel}: `, shouldShowAsDark ? THEME.muted : THEME.text);
+                        chat.text(`${setting.displayLabel}: `, THEME.text);
                     }
                     chat.runButton(display.text, command, setting.description, cycleActiveColor);
-                    chat.text(')', shouldShowAsDark ? THEME.muted : THEME.text);
+                    chat.text(')', THEME.text);
                     settingIndex++;
                     break;
             }
@@ -301,14 +301,14 @@ function showConfigMenu({ commandHandler, client, moduleName, config, schema, pa
         
         if (item.hasResetAll) {
             const resetAllCommand = `${baseCommand} --reset-all-confirm --page ${currentPage}`;
-            const resetColor = shouldShowAsDark ? THEME.muted : THEME.danger;
-            const resetHoverText = shouldShowAsDark ? 'Enable plugin to reset settings' : `${THEME.error}Reset ALL plugin settings to default`;
+            const resetColor = THEME.danger;
+            const resetHoverText = `${THEME.error}Reset ALL plugin settings to default`;
             chat.runButton('[R]', resetAllCommand, resetHoverText, resetColor);
         } else {
             const settingKeysOnLine = item.settings.map(s => s.key).join(',');
             const resetCommand = `${baseCommand} --reset-setting "${settingKeysOnLine}" --page ${currentPage}`;
-            const resetColor = shouldShowAsDark ? THEME.muted : THEME.info;
-            const resetHoverText = shouldShowAsDark ? 'Enable plugin to reset settings' : `Reset ${item.label} settings`;
+            const resetColor = THEME.info;
+            const resetHoverText = `Reset ${item.label} settings`;
             chat.runButton('[R]', resetCommand, resetHoverText, resetColor);
         }
 
