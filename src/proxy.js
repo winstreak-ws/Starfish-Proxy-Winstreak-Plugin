@@ -206,17 +206,79 @@ class MinecraftProxy {
         }
         
         const chat = ctx.createChat();
-        chat.text('--- Loaded Plugins ---', ctx.THEME.primary).newline();
+        chat.text('§m-----------------------------------------------------§r', ctx.THEME.muted).newline();
+        chat.text('Loaded Plugins', ctx.THEME.primary).newline();
         
         plugins.forEach(plugin => {
             const status = plugin.enabled ? '§aEnabled' : '§cDisabled';
-            const official = plugin.official ? ' §6[Official]' : '';
-            chat.text(`${plugin.displayName} `, ctx.THEME.secondary)
-                .text(`§7(/${plugin.name}) `, ctx.THEME.muted)
-                .text(status)
-                .text(official)
-                .newline();
+            const version = plugin.version ? ` §7v${plugin.version}` : '';
+            const compatibility = plugin.compatible === false ? ' §c[Incompatible]' : '';
+            
+            const hoverComponents = [];
+            hoverComponents.push({ text: `${ctx.THEME.accent}${plugin.displayName}\n` });
+            hoverComponents.push({ text: `${ctx.THEME.muted}§m--------------------------§r\n` });
+            hoverComponents.push({ text: `${ctx.THEME.info}${plugin.metadata.description || 'No description available.'}\n\n` });
+            
+            if (plugin.metadata.author) {
+                hoverComponents.push({ text: `${ctx.THEME.secondary}Author: ${ctx.THEME.text}${plugin.metadata.author}\n` });
+            }
+            
+            hoverComponents.push({ text: `${ctx.THEME.secondary}Version: ${ctx.THEME.text}${plugin.version}\n` });
+            hoverComponents.push({ text: `${ctx.THEME.secondary}Status: ${status}\n` });
+            
+            if (plugin.metadata.minVersion || plugin.metadata.maxVersion) {
+                hoverComponents.push({ text: `${ctx.THEME.secondary}Proxy Requirements: ` });
+                if (plugin.metadata.minVersion && plugin.metadata.maxVersion) {
+                    hoverComponents.push({ text: `${ctx.THEME.text}>= ${plugin.metadata.minVersion} and <= ${plugin.metadata.maxVersion}` });
+                } else if (plugin.metadata.minVersion) {
+                    hoverComponents.push({ text: `${ctx.THEME.text}>= ${plugin.metadata.minVersion}` });
+                } else if (plugin.metadata.maxVersion) {
+                    hoverComponents.push({ text: `${ctx.THEME.text}<= ${plugin.metadata.maxVersion}` });
+                }
+                hoverComponents.push({ text: '\n' });
+            }
+            
+            const deps = plugin.dependencies || [];
+            const optDeps = plugin.optionalDependencies || [];
+            
+            if (deps.length > 0) {
+                hoverComponents.push({ text: `${ctx.THEME.secondary}Dependencies: ` });
+                const depNames = deps.map(d => {
+                    if (typeof d === 'string') return d;
+                    let name = d.name;
+                    if (d.minVersion || d.maxVersion || d.version) {
+                        name += ' (';
+                        if (d.version) name += `=${d.version}`;
+                        else {
+                            if (d.minVersion) name += `>=${d.minVersion}`;
+                            if (d.maxVersion) name += `<=${d.maxVersion}`;
+                        }
+                        name += ')';
+                    }
+                    return name;
+                });
+                hoverComponents.push({ text: `${ctx.THEME.text}${depNames.join(', ')}\n` });
+            }
+            
+            if (optDeps.length > 0) {
+                hoverComponents.push({ text: `${ctx.THEME.secondary}Optional Dependencies: ` });
+                const optDepNames = optDeps.map(d => typeof d === 'string' ? d : d.name);
+                hoverComponents.push({ text: `${ctx.THEME.text}${optDepNames.join(', ')}\n` });
+            }
+            
+            hoverComponents.push({ text: `\n${ctx.THEME.text}Click to open help` });
+            
+            chat.suggestButton(plugin.displayName, `/${plugin.name} help`, hoverComponents, ctx.THEME.secondary);
+            chat.text(version, ctx.THEME.muted);
+            chat.text(' ');
+            chat.text(status);
+            if (compatibility) {
+                chat.text(compatibility);
+            }
+            chat.newline();
         });
+        
+        chat.text('§m-----------------------------------------------------§r', ctx.THEME.muted);
         chat.send();
     }
 

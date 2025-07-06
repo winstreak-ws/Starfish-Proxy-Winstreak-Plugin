@@ -6,9 +6,9 @@ module.exports = (api) => {
         name: 'denicker',
         displayName: 'Denicker',
         prefix: '§cDN',
-        version: '0.1.1',
+        version: '0.1.2',
         author: 'Hexze',
-        description: 'Detects and resolves nicked players (Inspired by github.com/PugrillaDev)'
+        description: 'Detects and resolves nicked players (Inspired by github.com/PugrillaDev)',
     });
 
     const denicker = new Denicker(api);

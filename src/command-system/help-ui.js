@@ -33,30 +33,31 @@ function sendHelpMessage(commandHandler, moduleName, commandName, client, page =
             });
         }
 
-        let hoverText = `${THEME.accent}/${moduleName} ${cmd.name()}\\n`;
-        hoverText += `${THEME.muted}§m--------------------------§r\\n`;
-        hoverText += `${THEME.info}${cmd.description() || 'No description available.'}\\n\\n`;
-        hoverText += `${THEME.secondary}Usage: ${THEME.text}${usage}\\n`;
+        const hoverComponents = [];
+        hoverComponents.push({ text: `${THEME.accent}/${moduleName} ${cmd.name()}\n` });
+        hoverComponents.push({ text: `${THEME.muted}§m--------------------------§r\n` });
+        hoverComponents.push({ text: `${THEME.info}${cmd.description() || 'No description available.'}\n\n` });
+        hoverComponents.push({ text: `${THEME.secondary}Usage: ${THEME.text}${usage}\n` });
         
         if (cmd._metadata && cmd._metadata.arguments.length > 0) {
-            hoverText += `\\n${THEME.secondary}Arguments:\\n`;
+            hoverComponents.push({ text: `\n${THEME.secondary}Arguments:\n` });
             cmd._metadata.arguments.forEach(arg => {
                 const argType = arg.optional ? 'Optional' : 'Required';
-                hoverText += `${THEME.muted}• ${THEME.primary}${arg.usage} ${THEME.muted}(${argType})`;
-                if (arg.description) hoverText += `${THEME.muted} - ${THEME.text}${arg.description}`;
-                hoverText += '\\n';
+                hoverComponents.push({ text: `${THEME.muted}• ${THEME.primary}${arg.usage} ${THEME.muted}(${argType})` });
+                if (arg.description) hoverComponents.push({ text: `${THEME.muted} - ${THEME.text}${arg.description}` });
+                hoverComponents.push({ text: '\n' });
             });
         }
         
         if (cmd.options && cmd.options.length > 0) {
-            hoverText += `\\n${THEME.secondary}Options:\\n`;
+            hoverComponents.push({ text: `\n${THEME.secondary}Options:\n` });
             cmd.options.forEach(opt => {
-                hoverText += `${THEME.muted}• ${THEME.primary}${opt.flags} ${THEME.muted}- ${THEME.info}${opt.description}\\n`;
+                hoverComponents.push({ text: `${THEME.muted}• ${THEME.primary}${opt.flags} ${THEME.muted}- ${THEME.info}${opt.description}\n` });
             });
         }
 
         chat.text('Usage: ', THEME.secondary);
-        chat.suggestButton(usage, usage, hoverText, THEME.primary);
+        chat.suggestButton(usage, usage, hoverComponents, THEME.primary);
         chat.newline().newline();
 
         if (cmd._metadata && cmd._metadata.arguments.length > 0) {
@@ -112,35 +113,36 @@ function sendHelpMessage(commandHandler, moduleName, commandName, client, page =
                 });
             }
 
-            let hoverText = `${THEME.accent}/${moduleName} ${cmd.name()}\\n`;
-            hoverText += `${THEME.muted}§m--------------------------§r\\n`;
-            hoverText += `${THEME.info}${cmd.description() || 'No description available.'}\\n\\n`;
-            hoverText += `${THEME.secondary}Usage: ${THEME.text}${usage}\\n`;
+            const listHoverComponents = [];
+            listHoverComponents.push({ text: `${THEME.accent}/${moduleName} ${cmd.name()}\n` });
+            listHoverComponents.push({ text: `${THEME.muted}§m--------------------------§r\n` });
+            listHoverComponents.push({ text: `${THEME.info}${cmd.description() || 'No description available.'}\n\n` });
+            listHoverComponents.push({ text: `${THEME.secondary}Usage: ${THEME.text}${usage}\n` });
 
             if (cmd._metadata && cmd._metadata.arguments.length > 0) {
-                hoverText += `\\n${THEME.secondary}Arguments:\\n`;
+                listHoverComponents.push({ text: `\n${THEME.secondary}Arguments:\n` });
                 cmd._metadata.arguments.forEach(arg => {
                     const argType = arg.optional ? 'Optional' : 'Required';
-                    hoverText += `${THEME.muted}• ${THEME.primary}${arg.usage} ${THEME.muted}(${argType})`;
-                    if (arg.description) hoverText += `${THEME.muted} - ${THEME.text}${arg.description}`;
-                    hoverText += '\\n';
+                    listHoverComponents.push({ text: `${THEME.muted}• ${THEME.primary}${arg.usage} ${THEME.muted}(${argType})` });
+                    if (arg.description) listHoverComponents.push({ text: `${THEME.muted} - ${THEME.text}${arg.description}` });
+                    listHoverComponents.push({ text: '\n' });
                 });
             }
 
             if (cmd.options && cmd.options.length > 0) {
-                hoverText += `\\n${THEME.secondary}Options:\\n`;
+                listHoverComponents.push({ text: `\n${THEME.secondary}Options:\n` });
                 cmd.options.forEach(opt => {
-                    hoverText += `${THEME.muted}• ${THEME.primary}${opt.flags} ${THEME.muted}- ${THEME.info}${opt.description}\\n`;
+                    listHoverComponents.push({ text: `${THEME.muted}• ${THEME.primary}${opt.flags} ${THEME.muted}- ${THEME.info}${opt.description}\n` });
                 });
             }
 
-            hoverText += `\\n${THEME.text}Click to paste command`;
+            listHoverComponents.push({ text: `\n${THEME.text}Click to paste command` });
 
             if (argsText) {
-                chat.suggestButton(`/${moduleName} ${cmd.name()}`, usage, hoverText, THEME.secondary);
+                chat.suggestButton(`/${moduleName} ${cmd.name()}`, usage, listHoverComponents, THEME.secondary);
                 chat.space().text(argsText, THEME.text);
             } else {
-                chat.suggestButton(`/${moduleName} ${cmd.name()}`, usage, hoverText, THEME.secondary);
+                chat.suggestButton(`/${moduleName} ${cmd.name()}`, usage, listHoverComponents, THEME.secondary);
             }
             chat.newline();
         });

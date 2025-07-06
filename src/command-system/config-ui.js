@@ -102,8 +102,15 @@ function createAutoConfig({ commandHandler, moduleName, options, client }) {
         }
         
         if (key === 'enabled') {
-            commandHandler.proxy.pluginAPI.setPluginEnabled(moduleName, value);
-            ctx.sendSuccess(`${value ? 'Enabled' : 'Disabled'} ${moduleName} plugin`);
+            const result = commandHandler.proxy.pluginAPI.setPluginEnabled(moduleName, value);
+            if (result.success) {
+                ctx.sendSuccess(`${value ? 'Enabled' : 'Disabled'} ${moduleName} plugin`);
+            } else {
+                ctx.sendError(`Cannot ${value ? 'enable' : 'disable'} ${moduleName}: ${result.reason}`);
+                setProperty(configObject, key, !value);
+                pluginWrapper.saveCurrentConfig();
+                return;
+            }
         } else {
             ctx.sendSuccess(`Updated ${key} to ${value}`);
         }

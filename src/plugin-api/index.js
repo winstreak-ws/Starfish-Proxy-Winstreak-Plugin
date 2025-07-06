@@ -11,12 +11,16 @@ const Server = require('./server');
 const fs = require('fs');
 const path = require('path');
 const { getPluginsDir } = require('../utils/paths');
+const { VersionUtils } = require('../utils/version-utils');
+const { DependencyResolver } = require('../utils/dependency-resolver');
 
 class PluginAPI {
     constructor(proxy, metadata) {
         this.proxy = proxy;
         this.metadata = metadata;
         this.loadedPlugins = [];
+        this.proxyVersion = '1.0.0';
+        this.dependencyResolver = new DependencyResolver();
         
         this.pluginStates = new Map();
         
@@ -138,7 +142,49 @@ class PluginAPI {
     
     setPluginEnabled(pluginName, enabled) {
         const pluginState = this.pluginStates.get(pluginName);
-        if (!pluginState) return;
+        if (!pluginState) return { success: false, reason: 'Plugin not found' };
+        
+        if (!enabled) {
+            const canDisable = this.dependencyResolver.canDisablePlugin(pluginName, this.pluginStates);
+            if (!canDisable.canDisable) {
+                return { 
+                    success: false, 
+                    reason: canDisable.reason,
+                    dependents: canDisable.dependents 
+                };
+            }
+        } else {
+            const missing = this.dependencyResolver.getMissingDependencies(pluginName);
+            if (missing.length > 0) {
+                return {
+                    success: false,
+                    reason: `Missing required dependencies: ${missing.join(', ')}`,
+                    missingDependencies: missing
+                };
+            }
+            
+            const plugin = this.loadedPlugins.find(p => p.name === pluginName);
+            if (plugin) {
+                const disabledDeps = [];
+                for (const dep of plugin.dependencies) {
+                    const depName = typeof dep === 'string' ? dep : dep.name;
+                    const depState = this.pluginStates.get(depName);
+                    if (!depState || !depState.enabled) {
+                        const depPlugin = this.loadedPlugins.find(p => p.name === depName);
+                        const depDisplayName = depPlugin ? depPlugin.displayName : depName;
+                        disabledDeps.push(depDisplayName);
+                    }
+                }
+                
+                if (disabledDeps.length > 0) {
+                    return {
+                        success: false,
+                        reason: `Required dependencies are disabled: ${disabledDeps.join(', ')}`,
+                        disabledDependencies: disabledDeps
+                    };
+                }
+            }
+        }
         
         const wasEnabled = pluginState.enabled;
         pluginState.enabled = enabled;
@@ -148,6 +194,8 @@ class PluginAPI {
         } else if (!wasEnabled && enabled) {
             this._restorePluginState(pluginName, pluginState);
         }
+        
+        return { success: true };
     }
     
     _cleanupPlugin(pluginName, pluginState) {
@@ -158,10 +206,8 @@ class PluginAPI {
         
         for (const interceptorInfo of pluginState.modifications.interceptors) {
             if (interceptorInfo.unsubscribe) {
-                // New intercept format
                 interceptorInfo.unsubscribe();
             } else if (interceptorInfo.direction && interceptorInfo.packets && interceptorInfo.handler) {
-                // Old interceptPackets format
                 this.events.unregisterPacketInterceptor(interceptorInfo.direction, interceptorInfo.packets, interceptorInfo.handler);
             }
         }
@@ -215,6 +261,96 @@ class PluginAPI {
         return true;
     }
     
+    _validateAndFixDependencyStates(pluginMetadataMap) {
+        const changedPlugins = [];
+        
+        const currentStates = new Map();
+        for (const pluginName of pluginMetadataMap.keys()) {
+            currentStates.set(pluginName, this._getPluginEnabledState(pluginName));
+        }
+        
+        for (const [pluginName, metadata] of pluginMetadataMap) {
+            const isEnabled = currentStates.get(pluginName);
+            if (!isEnabled) continue;
+            
+            const dependencies = metadata.dependencies || [];
+            let shouldDisable = false;
+            const missingDeps = [];
+            
+            for (const dep of dependencies) {
+                const depName = typeof dep === 'string' ? dep : dep.name;
+                const depEnabled = currentStates.get(depName);
+                
+                if (!depEnabled) {
+                    shouldDisable = true;
+                    missingDeps.push(depName);
+                }
+            }
+            
+            if (shouldDisable) {
+                this._setPluginEnabledInConfig(pluginName, false);
+                currentStates.set(pluginName, false);
+                changedPlugins.push(`${metadata.displayName} (missing dependencies: ${missingDeps.join(', ')})`);
+                
+                const dependentsToDisable = this._getEnabledDependents(pluginName, currentStates, pluginMetadataMap);
+                for (const dependent of dependentsToDisable) {
+                    this._setPluginEnabledInConfig(dependent, false);
+                    currentStates.set(dependent, false);
+                    const depMeta = pluginMetadataMap.get(dependent);
+                    changedPlugins.push(`${depMeta.displayName} (dependency ${metadata.displayName} was disabled)`);
+                }
+            }
+        }
+        
+        if (changedPlugins.length > 0) {
+            console.log(`Auto-disabled plugins due to dependency constraints: ${changedPlugins.join(', ')}`);
+        }
+    }
+    
+    _getEnabledDependents(pluginName, currentStates, pluginMetadataMap) {
+        const dependents = [];
+        
+        for (const [candidateName, metadata] of pluginMetadataMap) {
+            if (!currentStates.get(candidateName)) continue;
+            
+            const dependencies = metadata.dependencies || [];
+            const dependsOnTarget = dependencies.some(dep => {
+                const depName = typeof dep === 'string' ? dep : dep.name;
+                return depName === pluginName;
+            });
+            
+            if (dependsOnTarget) {
+                dependents.push(candidateName);
+                dependents.push(...this._getEnabledDependents(candidateName, currentStates, pluginMetadataMap));
+            }
+        }
+        
+        return [...new Set(dependents)];
+    }
+    
+    _setPluginEnabledInConfig(pluginName, enabled) {
+        try {
+            const { getPluginConfigDir } = require('../utils/paths');
+            const configPath = path.join(getPluginConfigDir(), `${pluginName}.config.json`);
+            
+            let configData = {};
+            if (fs.existsSync(configPath)) {
+                configData = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            }
+            
+            configData.enabled = enabled;
+            
+            const configDir = path.dirname(configPath);
+            if (!fs.existsSync(configDir)) {
+                fs.mkdirSync(configDir, { recursive: true });
+            }
+            
+            fs.writeFileSync(configPath, JSON.stringify(configData, null, 2));
+        } catch (error) {
+            console.error(`Failed to update config for plugin ${pluginName}: ${error.message}`);
+        }
+    }
+    
     loadPlugins() {
         const pluginsDir = getPluginsDir();
         if (!fs.existsSync(pluginsDir)) {
@@ -223,6 +359,11 @@ class PluginAPI {
         }
         
         const pluginFiles = fs.readdirSync(pluginsDir).filter(file => file.endsWith('.js'));
+        const pluginMetadataMap = new Map();
+        const pluginModules = new Map();
+        
+        const skippedPlugins = [];
+        const loadedPlugins = [];
         
         for (const file of pluginFiles) {
             try {
@@ -232,8 +373,105 @@ class PluginAPI {
                 const pluginMetadata = {
                     name: pluginName,
                     path: pluginPath,
-                    displayName: pluginName.charAt(0).toUpperCase() + pluginName.slice(1)
+                    displayName: pluginName.charAt(0).toUpperCase() + pluginName.slice(1),
+                    version: '1.0.0',
+                    minVersion: null,
+                    maxVersion: null,
+                    dependencies: [],
+                    optionalDependencies: []
                 };
+                
+                delete require.cache[require.resolve(pluginPath)];
+                const plugin = require(pluginPath);
+                
+                const metadataWrapper = this.createMetadataOnlyWrapper(pluginMetadata);
+                
+                try {
+                    if (typeof plugin.init === 'function') {
+                        plugin.init(metadataWrapper);
+                    } else if (typeof plugin === 'function') {
+                        plugin(metadataWrapper);
+                    }
+                } catch (initError) {
+                }
+                
+                const versionCheck = this._validatePluginVersion(pluginMetadata);
+                if (!versionCheck.compatible) {
+                    skippedPlugins.push(`${pluginMetadata.displayName} (${versionCheck.reason})`);
+                    continue;
+                }
+                
+                pluginMetadataMap.set(pluginName, pluginMetadata);
+                pluginModules.set(pluginName, plugin);
+                this.dependencyResolver.addPlugin(pluginMetadata);
+                
+            } catch (error) {
+                const displayName = pluginName.charAt(0).toUpperCase() + pluginName.slice(1);
+                skippedPlugins.push(`${displayName} (load error: ${error.message})`);
+            }
+        }
+        
+        this.dependencyResolver.buildDependencyGraph();
+        
+        const cycles = this.dependencyResolver.detectCircularDependencies();
+        if (cycles.length > 0) {
+            cycles.forEach(cycle => {
+                const pluginName = cycle[0];
+                const pluginMeta = pluginMetadataMap.get(pluginName);
+                const displayName = pluginMeta ? pluginMeta.displayName : pluginName.charAt(0).toUpperCase() + pluginName.slice(1);
+                skippedPlugins.push(`${displayName} (circular dependency)`);
+            });
+            return;
+        }
+        
+        const dependencyErrors = this.dependencyResolver.validateDependencies();
+        const incompatiblePlugins = new Set();
+        
+        if (dependencyErrors.length > 0) {
+            dependencyErrors.forEach(error => {
+                const match = error.match(/Plugin "([^"]+)"/);
+                if (match) {
+                    const pluginName = match[1];
+                    const pluginMeta = pluginMetadataMap.get(pluginName);
+                    const displayName = pluginMeta ? pluginMeta.displayName : pluginName.charAt(0).toUpperCase() + pluginName.slice(1);
+                    
+                    incompatiblePlugins.add(pluginName);
+                    if (error.includes('missing dependency')) {
+                        const depMatch = error.match(/requires missing dependency "([^"]+)"/);
+                        if (depMatch) {
+                            skippedPlugins.push(`${displayName} (missing dependency: ${depMatch[1]})`);
+                        } else {
+                            skippedPlugins.push(`${displayName} (missing dependency)`);
+                        }
+                    } else if (error.includes('version incompatible')) {
+                        skippedPlugins.push(`${displayName} (dependency version conflict)`);
+                    } else {
+                        skippedPlugins.push(`${displayName} (dependency error)`);
+                    }
+                }
+            });
+            
+            for (const pluginName of incompatiblePlugins) {
+                this.dependencyResolver.plugins.delete(pluginName);
+                this.dependencyResolver.dependencyGraph.delete(pluginName);
+                pluginMetadataMap.delete(pluginName);
+            }
+            
+            this.dependencyResolver.buildDependencyGraph();
+        }
+        
+        const loadOrder = this.dependencyResolver.getLoadOrder();
+        
+        this._validateAndFixDependencyStates(pluginMetadataMap);
+        
+        for (const pluginName of loadOrder) {
+            try {
+                const pluginMetadata = pluginMetadataMap.get(pluginName);
+                const plugin = pluginModules.get(pluginName);
+                if (!pluginMetadata || !plugin) {
+                    console.log(`Skipping ${pluginName} - metadata or module not found`);
+                    continue;
+                }
                 
                 const pluginEnabled = this._getPluginEnabledState(pluginName);
                 
@@ -247,32 +485,112 @@ class PluginAPI {
                 });
                 
                 const pluginAPI = this.createPluginWrapper(pluginMetadata);
-                
-                delete require.cache[require.resolve(pluginPath)];
-                const plugin = require(pluginPath);
-
-                if (typeof plugin.init === 'function') {
-                    plugin.init(pluginAPI);
-                } else if (typeof plugin === 'function') {
-                    plugin(pluginAPI);
+                try {
+                    if (typeof plugin.init === 'function') {
+                        plugin.init(pluginAPI);
+                    } else if (typeof plugin === 'function') {
+                        plugin(pluginAPI);
+                    }
+                } catch (initError) {
+                    console.error(`Plugin ${pluginName} initialization failed: ${initError.message}`);
+                    continue;
                 }
                 
                 this.loadedPlugins.push({
                     name: pluginName,
                     displayName: pluginMetadata.displayName,
-                    path: pluginPath,
+                    path: pluginMetadata.path,
                     enabled: pluginEnabled,
-                    official: true,
-                    metadata: pluginMetadata
+                    metadata: pluginMetadata,
+                    version: pluginMetadata.version,
+                    compatible: true,
+                    dependencies: pluginMetadata.dependencies || [],
+                    optionalDependencies: pluginMetadata.optionalDependencies || []
                 });
                 
-                const statusText = pluginEnabled ? 'Loaded' : 'Loaded (disabled)';
-                console.log(`${statusText} plugin: ${pluginMetadata.displayName}`);
+                loadedPlugins.push(pluginMetadata.displayName);
                 
             } catch (error) {
-                console.error(`Failed to load plugin ${file}:`, error.message);
+                const pluginMeta = pluginMetadataMap.get(pluginName);
+                const displayName = pluginMeta ? pluginMeta.displayName : pluginName.charAt(0).toUpperCase() + pluginName.slice(1);
+                skippedPlugins.push(`${displayName} (initialization error)`);
             }
         }
+        
+        if (skippedPlugins.length > 0) {
+            console.log(`Skipped plugins: ${skippedPlugins.join(', ')}`);
+        }
+        if (loadedPlugins.length > 0) {
+            console.log(`Loaded plugins: ${loadedPlugins.join(', ')}`);
+        } else {
+            console.log('No plugins loaded');
+        }
+    }
+    
+    createMetadataOnlyWrapper(pluginMetadata) {
+        return {
+            metadata: (meta) => {
+                Object.assign(pluginMetadata, meta);
+                
+                if (meta.version && !VersionUtils.isVersionValid(meta.version)) {
+                    throw new Error(`Invalid plugin version: ${meta.version}`);
+                }
+                if (meta.minVersion && !VersionUtils.isVersionValid(meta.minVersion)) {
+                    throw new Error(`Invalid minVersion: ${meta.minVersion}`);
+                }
+                if (meta.maxVersion && !VersionUtils.isVersionValid(meta.maxVersion)) {
+                    throw new Error(`Invalid maxVersion: ${meta.maxVersion}`);
+                }
+                
+                if (meta.dependencies && !Array.isArray(meta.dependencies)) {
+                    throw new Error('dependencies must be an array');
+                }
+                if (meta.optionalDependencies && !Array.isArray(meta.optionalDependencies)) {
+                    throw new Error('optionalDependencies must be an array');
+                }
+                
+                const validateDependency = (dep, type) => {
+                    if (typeof dep === 'string') {
+                        return;
+                    }
+                    if (typeof dep !== 'object' || !dep.name) {
+                        throw new Error(`${type} must have a name property`);
+                    }
+                    if (dep.version && !VersionUtils.isVersionValid(dep.version)) {
+                        throw new Error(`Invalid ${type} version: ${dep.version}`);
+                    }
+                    if (dep.minVersion && !VersionUtils.isVersionValid(dep.minVersion)) {
+                        throw new Error(`Invalid ${type} minVersion: ${dep.minVersion}`);
+                    }
+                    if (dep.maxVersion && !VersionUtils.isVersionValid(dep.maxVersion)) {
+                        throw new Error(`Invalid ${type} maxVersion: ${dep.maxVersion}`);
+                    }
+                };
+                
+                if (meta.dependencies) {
+                    meta.dependencies.forEach(dep => validateDependency(dep, 'dependency'));
+                }
+                if (meta.optionalDependencies) {
+                    meta.optionalDependencies.forEach(dep => validateDependency(dep, 'optional dependency'));
+                }
+            },
+            
+            configSchema: () => {},
+            log: () => {},
+            debugLog: () => {},
+            on: () => () => {},
+            emit: () => {},
+            intercept: () => () => {},
+            everyTick: () => () => {},
+            onWorldChange: () => () => {},
+            commands: () => {},
+            chat: () => {},
+            sound: () => {},
+            getPrefix: () => '',
+            isEnabled: () => false,
+            config: { get: () => undefined },
+            players: []
+        };
     }
     
     createPluginWrapper(pluginMetadata) {
@@ -292,9 +610,17 @@ class PluginAPI {
             };
         };
         
+        const safeMethod = (fn, methodName) => {
+            return (...args) => {
+                if (!pluginState) {
+                    return;
+                }
+                return withEnabledCheck(fn, methodName)(...args);
+            };
+        };
+        
         return {
-            metadata: (meta) => {
-                Object.assign(pluginMetadata, meta);
+            metadata: () => {
             },
             
             configSchema: (schema) => {
@@ -315,11 +641,12 @@ class PluginAPI {
             isEnabled: () => pluginState?.enabled && pluginCore.enabled,
             
             on: (event, handler) => {
+                if (!pluginState) return () => {};
                 const wrappedHandler = withEnabledCheck(handler, 'eventHandler');
                 pluginState.modifications.eventHandlers.add({ event, handler: wrappedHandler });
                 return mainAPI.on(event, wrappedHandler);
             },
-            emit: withEnabledCheck(mainAPI.emit, 'emit'),
+            emit: safeMethod(mainAPI.emit, 'emit'),
             
             intercept: (event, handler) => {
                 if (!mainAPI._checkPluginEnabled(pluginName, 'intercept')) {
@@ -383,11 +710,13 @@ class PluginAPI {
             sound: withEnabledCheck(mainAPI.sound, 'sound'),
             
             everyTick: (callback) => {
+                if (!pluginState) return () => {};
                 const wrappedCallback = withEnabledCheck(callback, 'tickHandler');
                 return mainAPI.on('tick', wrappedCallback);
             },
             
             onWorldChange: (callback) => {
+                if (!pluginState) return () => {};
                 const wrappedCallback = withEnabledCheck(callback, 'worldChangeHandler');
                 return mainAPI.on('world.change', wrappedCallback);
             },
@@ -510,6 +839,39 @@ class PluginAPI {
     
     getLoadedPlugins() {
         return this.loadedPlugins;
+    }
+    
+    _validatePluginVersion(pluginMetadata) {
+        try {
+            if (!pluginMetadata.minVersion && !pluginMetadata.maxVersion) {
+                return { compatible: true };
+            }
+            
+            if (pluginMetadata.minVersion) {
+                if (!VersionUtils.isCompatible(this.proxyVersion, pluginMetadata.minVersion, 'min')) {
+                    return {
+                        compatible: false,
+                        reason: `Requires proxy version >= ${pluginMetadata.minVersion}, current: ${this.proxyVersion}`
+                    };
+                }
+            }
+            
+            if (pluginMetadata.maxVersion) {
+                if (!VersionUtils.isCompatible(this.proxyVersion, pluginMetadata.maxVersion, 'max')) {
+                    return {
+                        compatible: false,
+                        reason: `Requires proxy version <= ${pluginMetadata.maxVersion}, current: ${this.proxyVersion}`
+                    };
+                }
+            }
+            
+            return { compatible: true };
+        } catch (error) {
+            return {
+                compatible: false,
+                reason: `Version validation error: ${error.message}`
+            };
+        }
     }
     
     _handleWorldChange(reason) {

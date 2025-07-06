@@ -29,10 +29,17 @@ class ChatBuilder {
             }
         };
         if (hoverText) {
-            component.hoverEvent = {
-                action: 'show_text',
-                value: { text: `${THEME.muted}${hoverText}` }
-            };
+            if (Array.isArray(hoverText)) {
+                component.hoverEvent = {
+                    action: 'show_text',
+                    value: { text: '', extra: hoverText }
+                };
+            } else {
+                component.hoverEvent = {
+                    action: 'show_text',
+                    value: { text: `${THEME.muted}${hoverText}` }
+                };
+            }
         }
         this._components.push(component);
         return this;
