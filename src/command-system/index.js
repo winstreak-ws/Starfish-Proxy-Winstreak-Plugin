@@ -49,6 +49,7 @@ class CommandHandler {
             .addOption(new Option('--reset-setting <key>', 'Reset a specific setting to default').hideHelp())
             .addOption(new Option('--reset-all-confirm', 'Confirm resetting all settings').hideHelp())
             .addOption(new Option('--reset-all-execute', 'Execute resetting all settings').hideHelp())
+            .addOption(new Option('--button <key>', 'Execute a button action').hideHelp())
             .action((options, cmd) => {
                 createAutoConfig({
                     commandHandler: this,
@@ -112,7 +113,9 @@ class CommandHandler {
 
                     const parsedArgs = {};
                     commandMetadata.arguments.forEach((argMeta, i) => {
-                        parsedArgs[argMeta.name] = rawArgs[i];
+                        // Strip brackets from argument name for cleaner access
+                        const cleanName = argMeta.name.replace(/^[<\[]/, '').replace(/[>\]]$/, '').replace(/\.\.\.$/, '');
+                        parsedArgs[cleanName] = rawArgs[i];
                     });
 
                     const ctx = {
@@ -176,15 +179,80 @@ class CommandHandler {
             const argv = [process.execPath, __filename, ...args];
             moduleCommand.parse(argv);
         } catch (error) {
-            if (error.code === 'commander.unknownCommand') {
-                this.proxy.sendMessage(client, `${THEME.error}Unknown command. Use '/${moduleName} help'`);
-            } else {
-                console.error('Command error:', error);
-                this.proxy.sendMessage(client, `${THEME.error}An error occurred while processing the command.`);
-            }
+            this._handleCommandError(error, client, moduleName, args);
         }
         
         return true;
+    }
+    
+    _handleCommandError(error, client, moduleName, args) {
+        const commandName = args[0] || '';
+        
+        switch (error.code) {
+            case 'commander.unknownCommand':
+                this.proxy.sendMessage(client, `${THEME.error}Unknown command '${commandName}'. Use '/${moduleName} help'`);
+                break;
+                
+            case 'commander.excessArguments':
+                this.proxy.sendMessage(client, `${THEME.error}Too many arguments for '${commandName}' command`);
+                this.proxy.sendMessage(client, `${THEME.info}Use '/${moduleName} help ${commandName}' for usage`);
+                break;
+                
+            case 'commander.missingArgument':
+                const missingArg = this._extractMissingArgument(error.message);
+                if (missingArg) {
+                    this.proxy.sendMessage(client, `${THEME.error}Missing required argument: ${missingArg}`);
+                } else {
+                    this.proxy.sendMessage(client, `${THEME.error}Missing required arguments for '${commandName}' command`);
+                }
+                this.proxy.sendMessage(client, `${THEME.info}Use '/${moduleName} help ${commandName}' for usage`);
+                break;
+                
+            case 'commander.invalidArgument':
+                this.proxy.sendMessage(client, `${THEME.error}Invalid argument for '${commandName}' command`);
+                this.proxy.sendMessage(client, `${THEME.info}Use '/${moduleName} help ${commandName}' for usage`);
+                break;
+                
+            case 'commander.optionMissingArgument':
+                const optionName = this._extractOptionName(error.message);
+                if (optionName) {
+                    this.proxy.sendMessage(client, `${THEME.error}Option '${optionName}' requires a value`);
+                } else {
+                    this.proxy.sendMessage(client, `${THEME.error}Option requires a value`);
+                }
+                break;
+                
+            case 'commander.unknownOption':
+                const unknownOption = this._extractOptionName(error.message);
+                if (unknownOption) {
+                    this.proxy.sendMessage(client, `${THEME.error}Unknown option '${unknownOption}'`);
+                } else {
+                    this.proxy.sendMessage(client, `${THEME.error}Unknown option`);
+                }
+                this.proxy.sendMessage(client, `${THEME.info}Use '/${moduleName} help ${commandName}' for available options`);
+                break;
+                
+            default:
+                // For any other errors, provide a more helpful generic message
+                this.proxy.sendMessage(client, `${THEME.error}Invalid command usage`);
+                this.proxy.sendMessage(client, `${THEME.info}Use '/${moduleName} help${commandName ? ` ${commandName}` : ''}' for help`);
+                
+                // Still log the error for debugging, but don't overwhelm the user
+                console.error('Command error:', error.message);
+                break;
+        }
+    }
+    
+    _extractMissingArgument(message) {
+        // Extract argument name from messages like "error: missing required argument 'username'"
+        const match = message.match(/missing required argument ['"]?([^'"]+)['"]?/i);
+        return match ? match[1] : null;
+    }
+    
+    _extractOptionName(message) {
+        // Extract option name from messages like "error: unknown option '--invalid'"
+        const match = message.match(/option ['"]?([^'"]+)['"]?/i);
+        return match ? match[1] : null;
     }
 }
 

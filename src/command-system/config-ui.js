@@ -3,7 +3,7 @@ const ChatBuilder = require('./chat-builder');
 const { getProperty, setProperty, createPaginator } = require('./utils');
 
 function createAutoConfig({ commandHandler, moduleName, options, client }) {
-    const { set, page, resetSetting, resetAllConfirm, resetAllExecute } = options;
+    const { set, page, resetSetting, resetAllConfirm, resetAllExecute, button } = options;
     
     const pluginAPI = commandHandler.proxy.pluginAPI;
     const loadedPlugin = pluginAPI.loadedPlugins.find(p => p.name === moduleName);
@@ -14,7 +14,9 @@ function createAutoConfig({ commandHandler, moduleName, options, client }) {
     }
     
     const pluginWrapper = pluginAPI.createPluginWrapper(loadedPlugin.metadata);
-    const configObject = pluginWrapper.getConfig();
+    // Try to get config from the actual plugin instance first
+    const pluginInstance = loadedPlugin.instance;
+    const configObject = pluginInstance?.api?.config?.getAll() || pluginWrapper.getConfig();
     
     const configSchema = loadedPlugin.metadata.configSchema;
     
@@ -23,6 +25,9 @@ function createAutoConfig({ commandHandler, moduleName, options, client }) {
     const ctx = {
         client,
         THEME,
+        commandHandler,
+        pluginWrapper,
+        config: configObject,
         createChat: () => new ChatBuilder(commandHandler, client),
         sendSuccess: (message) => commandHandler.proxy.sendMessage(client, `${THEME.success}✓ ${message}`),
         sendError: (message) => commandHandler.proxy.sendMessage(client, `${THEME.error}✗ ${message}`)
@@ -53,6 +58,23 @@ function createAutoConfig({ commandHandler, moduleName, options, client }) {
         
         pluginWrapper.saveCurrentConfig();
         ctx.sendSuccess(`All ${moduleName} settings have been reset to default.`);
+        return;
+    }
+    
+    if (button) {
+        const buttonSetting = schema
+            .flatMap(item => item.settings)
+            .find(setting => setting.type === 'button' && setting.key === button);
+            
+        if (buttonSetting && buttonSetting.handler) {
+            try {
+                buttonSetting.handler(ctx);
+            } catch (error) {
+                ctx.sendError(`Button action failed: ${error.message}`);
+            }
+        } else {
+            ctx.sendError(`Button ${button} not found or has no handler`);
+        }
         return;
     }
     
@@ -240,7 +262,7 @@ function showConfigMenu({ commandHandler, client, moduleName, config, schema, pa
         
         let displayableSettings = 0;
         otherSettings.forEach((setting) => {
-            if (['toggle', 'soundToggle', 'cycle'].includes(setting.type)) {
+            if (['toggle', 'soundToggle', 'cycle', 'button'].includes(setting.type)) {
                 displayableSettings++;
             }
         });
@@ -288,6 +310,15 @@ function showConfigMenu({ commandHandler, client, moduleName, config, schema, pa
                     }
                     chat.runButton(display.text, command, setting.description, cycleActiveColor);
                     chat.text(')', THEME.text);
+                    settingIndex++;
+                    break;
+                case 'button':
+                    if (settingIndex > 0) chat.text(' | ', THEME.muted);
+                    const buttonCommand = setting.command || `${baseCommand} --button ${setting.key} --page ${currentPage}`;
+                    const buttonColor = setting.color || THEME.accent;
+                    const buttonText = setting.text || 'Button';
+                    
+                    chat.runButton(`[${buttonText}]`, buttonCommand, setting.description, buttonColor);
                     settingIndex++;
                     break;
             }
