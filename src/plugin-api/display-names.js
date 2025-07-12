@@ -27,9 +27,7 @@ class DisplayNames {
                 this.originalDisplayNames.set(uuid, originalName);
             }
             
-            setTimeout(() => {
-                this._updatePlayerDisplayName(uuid);
-            }, 100);
+            this._updatePlayerDisplayName(uuid);
         }
     }
     
@@ -77,7 +75,7 @@ class DisplayNames {
             setTimeout(() => {
                 if (!this.proxy.currentPlayer?.gameState) return;
                 this._updatePlayerDisplayName(data.uuid);
-            }, 100);
+            }, 500);
         }
     }
     
@@ -108,17 +106,36 @@ class DisplayNames {
     _handleTeamUpdate(event) {
         if (!this.proxy.currentPlayer?.client) return;
         
-        const { team: teamName, mode } = event.data;
+        const teamName = event.name;
+        const mode = event.mode;
+        
+        if (!teamName || mode === undefined) return;
         
         if (mode >= 0 && mode <= 4) {
             setTimeout(() => {
                 if (!this.proxy.currentPlayer?.gameState) return;
                 
                 if (mode === 1) {
-                    for (const [uuid, customName] of this.customDisplayNames) {
-                        this._updatePlayerDisplayName(uuid);
+                    const team = this.proxy.currentPlayer.gameState.teams.get(teamName);
+                    if (team) {
+                        for (const [uuid, customName] of this.customDisplayNames) {
+                            const playerInfo = this.proxy.currentPlayer.gameState.playerInfo.get(uuid);
+                            if (playerInfo && team.players.has(playerInfo.name)) {
+                                this._updatePlayerDisplayName(uuid);
+                            }
+                        }
                     }
-                } else {
+                } else if (mode === 3 && event.players) {
+                    for (const playerName of event.players) {
+                        for (const [uuid, customName] of this.customDisplayNames) {
+                            const playerInfo = this.proxy.currentPlayer.gameState.playerInfo.get(uuid);
+                            if (playerInfo && playerInfo.name === playerName) {
+                                this._updatePlayerDisplayName(uuid);
+                                break;
+                            }
+                        }
+                    }
+                } else if (mode === 0 || mode === 2) {
                     const team = this.proxy.currentPlayer.gameState.teams.get(teamName);
                     if (!team) return;
                     
@@ -166,4 +183,4 @@ class DisplayNames {
     }
 }
 
-module.exports = DisplayNames; 
+module.exports = DisplayNames;

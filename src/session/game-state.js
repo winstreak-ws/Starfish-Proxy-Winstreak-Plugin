@@ -1,3 +1,8 @@
+const PlayerHandler = require('./handlers/player');
+const EntityHandler = require('./handlers/entity');
+const MovementHandler = require('./handlers/movement');
+const InventoryHandler = require('./handlers/inventory');
+const MiscHandler = require('./handlers/misc');
 
 function stripColorCodes(str) {
     if (typeof str !== 'string') return str;
@@ -7,6 +12,12 @@ function stripColorCodes(str) {
 class GameState {
     constructor() {
         this.reset();
+
+        this.playerHandler = new PlayerHandler(this);
+        this.entityHandler = new EntityHandler(this);
+        this.movementHandler = new MovementHandler(this);
+        this.inventoryHandler = new InventoryHandler(this);
+        this.miscHandler = new MiscHandler(this);
     }
 
     byteToYaw(byte) {
@@ -34,368 +45,107 @@ class GameState {
 
     updateFromPacket(meta, data, fromServer) {
         if (!fromServer) {
-            switch (meta.name) {
-                case 'held_item_slot':
-                    this.inventory.heldItemSlot = data.slotId;
-                    break;
-                case 'position':
-                case 'position_look':
-                    this.lastPosition = { ...this.position };
-                    this.position.x = data.x;
-                    this.position.y = data.y;
-                    this.position.z = data.z;
-                    if (data.yaw !== undefined) this.position.yaw = data.yaw;
-                    if (data.pitch !== undefined) this.position.pitch = data.pitch;
-                    break;
-            }
+            this._handleClientPacket(meta, data);
             return;
         }
         
+        this._handleServerPacket(meta, data);
+    }
+
+    _handleClientPacket(meta, data) {
         switch (meta.name) {
+            case 'held_item_slot':
+                this.inventoryHandler.handleHeldItemSlot(data);
+                break;
+            case 'position':
+            case 'position_look':
+                this.movementHandler.handleClientPosition(data);
+                break;
+        }
+    }
+
+    _handleServerPacket(meta, data) {
+        switch (meta.name) {
+            
+
             case 'login':
-                this.loginPacket = data;
-                this.gameMode = data.gameMode;
+                this.playerHandler.handleLogin(data);
                 break;
-                
-            case 'respawn': {
-                const loginData = this.loginPacket;
-                this.reset();
-                this.loginPacket = loginData;
-                this.gameMode = data.gameMode;
+            case 'respawn':
+                this.playerHandler.handleRespawn(data);
                 break;
-            }
-                
             case 'player_info':
-                this.updatePlayerInfo(data);
+                this.playerHandler.handlePlayerInfo(data);
                 break;
-                
-            case 'scoreboard_team':
-                this.updateTeam(data);
+            case 'update_health':
+                this.playerHandler.handleUpdateHealth(data);
                 break;
-                
-            case 'scoreboard_objective':
-                this.updateScoreboard(data);
+            case 'experience':
+                this.playerHandler.handleExperience(data);
                 break;
-                
-            case 'scoreboard_score':
-                this.updateScore(data);
+            case 'game_state_change':
+                this.playerHandler.handleGameStateChange(data);
                 break;
-                
+
+
             case 'named_entity_spawn':
-                const newEntity = {
-                    type: 'player',
-                    uuid: data.playerUUID,
-                    name: null,
-                    position: { x: data.x / 32, y: data.y / 32, z: data.z / 32 },
-                    lastPosition: { x: data.x / 32, y: data.y / 32, z: data.z / 32 },
-                    yaw: this.byteToYaw(data.yaw),
-                    pitch: this.byteToPitch(data.pitch),
-                    onGround: true,
-                    isCrouching: false,
-                    isSprinting: false,
-                    isUsingItem: false,
-                    isOnFire: false,
-                    heldItem: null,
-                    equipment: {},
-                    metadata: data.metadata || [],
-                    effects: new Map(),
-                    lastDamaged: 0,
-                    health: 20
-                };
-
-                const initialFlags = newEntity.metadata.find(m => m.key === 0)?.value || 0;
-                newEntity.isOnFire = (initialFlags & 0x01) !== 0;
-                newEntity.isCrouching = (initialFlags & 0x02) !== 0;
-                newEntity.isSprinting = (initialFlags & 0x08) !== 0;
-                newEntity.isUsingItem = (initialFlags & 0x10) !== 0;
-                
-                const healthMeta = newEntity.metadata.find(m => m.key === 6);
-                if (healthMeta) newEntity.health = healthMeta.value;
-
-                this.uuidToEntityId.set(data.playerUUID, data.entityId);
-                this.entities.set(data.entityId, newEntity);
-                this.entityIdToUuid.set(data.entityId, data.playerUUID);
+                this.entityHandler.handleNamedEntitySpawn(data);
                 break;
-                
             case 'spawn_entity':
             case 'spawn_entity_living':
-                this.entities.set(data.entityId, {
-                    type: data.type,
-                    position: { x: data.x / 32, y: data.y / 32, z: data.z / 32 },
-                    metadata: data.metadata,
-                    effects: new Map(),
-                });
+                this.entityHandler.handleSpawnEntity(data);
                 break;
-                
             case 'entity_destroy':
-                if (Array.isArray(data.entityIds)) {
-                    data.entityIds.forEach(id => {
-                        const uuid = this.entityIdToUuid.get(id);
-                        if (uuid) {
-                            this.uuidToEntityId.delete(uuid);
-                        }
-                        this.entities.delete(id);
-                        this.entityIdToUuid.delete(id);
-                    });
-                }
+                this.entityHandler.handleEntityDestroy(data);
                 break;
-                
-            case 'rel_entity_move':
-            case 'entity_look':
-            case 'entity_move_look':
-            case 'entity_teleport':
-                if (this.entities.has(data.entityId)) {
-                    const entity = this.entities.get(data.entityId);
-                    entity.lastPosition = { ...entity.position };
-                    if (meta.name === 'entity_teleport') {
-                        entity.position = { x: data.x / 32, y: data.y / 32, z: data.z / 32 };
-                        entity.yaw = this.byteToYaw(data.yaw);
-                        entity.pitch = this.byteToPitch(data.pitch);
-                    } else if (meta.name === 'rel_entity_move' || meta.name === 'entity_move_look') {
-                        entity.position.x += data.dX / 32;
-                        entity.position.y += data.dY / 32;
-                        entity.position.z += data.dZ / 32;
-                    }
-                    if (meta.name === 'entity_look' || meta.name === 'entity_move_look') {
-                        entity.yaw = this.byteToYaw(data.yaw);
-                        entity.pitch = this.byteToPitch(data.pitch);
-                    }
-                    entity.onGround = data.onGround;
-                }
-                break;
-                
             case 'entity_metadata':
-                if (this.entities.has(data.entityId)) {
-                    const entity = this.entities.get(data.entityId);
-                    if (!entity.metadata) entity.metadata = [];
-                    
-                    data.metadata.forEach(newMeta => {
-                        const index = entity.metadata.findIndex(m => m.key === newMeta.key);
-                        if (index !== -1) {
-                            entity.metadata[index] = newMeta;
-                        } else {
-                            entity.metadata.push(newMeta);
-                        }
-                        if (newMeta.key === 6) {
-                            entity.health = newMeta.value;
-                        }
-                    });
-                    
-                    const flags = entity.metadata.find(m => m.key === 0)?.value || 0;
-                    entity.isOnFire = (flags & 0x01) !== 0;
-                    entity.isCrouching = (flags & 0x02) !== 0;
-                    entity.isSprinting = (flags & 0x08) !== 0;
-                    entity.isUsingItem = (flags & 0x10) !== 0;
-                }
+                this.entityHandler.handleEntityMetadata(data);
                 break;
-                
             case 'entity_equipment':
-                if (this.entities.has(data.entityId)) {
-                    const entity = this.entities.get(data.entityId);
-                    if (!entity.equipment) entity.equipment = {};
-                    entity.equipment[data.slot] = data.item;
-                    if (data.slot === 0) {
-                        entity.heldItem = data.item;
-                    }
-                }
+                this.entityHandler.handleEntityEquipment(data);
                 break;
-                
-            case 'set_slot':
-                if (data.windowId === 0 && data.slot >= 0 && data.slot < 46) {
-                    this.inventory.slots[data.slot] = data.item;
-                }
-                break;
-                
-            case 'window_items':
-                if (data.windowId === 0) {
-                    this.inventory.slots = data.items.slice(0, 46);
-                }
-                break;
-                
             case 'entity_effect':
-                if (this.entities.has(data.entityId)) {
-                    const entity = this.entities.get(data.entityId);
-                    if (!entity.effects) entity.effects = new Map();
-                    entity.effects.set(data.effectId, {
-                        amplifier: data.amplifier,
-                        duration: data.duration,
-                        hideParticles: data.hideParticles
-                    });
-                }
+                this.entityHandler.handleEntityEffect(data);
                 break;
-
             case 'remove_entity_effect':
-                if (this.entities.has(data.entityId)) {
-                    const entity = this.entities.get(data.entityId);
-                    if (!entity.effects) entity.effects = new Map();
-                    entity.effects.delete(data.effectId);
-                }
+                this.entityHandler.handleRemoveEntityEffect(data);
                 break;
-            
             case 'entity_status':
-                if (data.entityStatus === 2 && this.entities.has(data.entityId)) {
-                    const entity = this.entities.get(data.entityId);
-                    entity.lastDamaged = Date.now();
-                }
+                this.entityHandler.handleEntityStatus(data);
                 break;
-                
-            case 'update_health':
-                this.health = data.health;
-                this.food = data.food;
-                this.saturation = data.foodSaturation;
-                break;
-                
-            case 'experience':
-                this.experience = {
-                    progress: data.experienceBar,
-                    level: data.level,
-                    total: data.totalExperience
-                };
-                break;
-                
-            case 'game_state_change':
-                if (data.reason === 3) {
-                    this.gameMode = data.gameMode;
-                }
-                break;
-        }
-    }
 
-    updatePlayerInfo(data) {
-        if (!data.data || !Array.isArray(data.data)) return;
-        
-        for (const player of data.data) {
-            switch (data.action) {
-                case 0:
-                    this.playerInfo.set(player.UUID, {
-                        name: stripColorCodes(player.name),
-                        properties: player.properties || [],
-                        gamemode: player.gamemode,
-                        ping: player.ping,
-                        displayName: player.displayName
-                    });
-                    break;
-                case 1:
-                    const existing = this.playerInfo.get(player.UUID);
-                    if (existing) existing.gamemode = player.gamemode;
-                    break;
-                case 2:
-                    const info = this.playerInfo.get(player.UUID);
-                    if (info) info.ping = player.ping;
-                    break;
-                case 3:
-                    const p = this.playerInfo.get(player.UUID);
-                    if (p) p.displayName = player.displayName;
-                    break;
-                case 4:
-                    this.playerInfo.delete(player.UUID);
-                    break;
-            }
-        }
-    }
 
-    updateTeam(data) {
-        const { team, mode } = data;
-        
-        switch (mode) {
-            case 0:
-                this.teams.set(team, {
-                    displayName: data.name || team,
-                    prefix: data.prefix || '',
-                    suffix: data.suffix || '',
-                    color: data.color || -1,
-                    players: new Set((data.players || []).map(p => stripColorCodes(p)))
-                });
+            case 'rel_entity_move':
+                this.movementHandler.handleRelEntityMove(data);
                 break;
-            case 2:
-                const existingTeam = this.teams.get(team);
-                if (existingTeam) {
-                    const updatedTeam = {
-                        displayName: data.name !== undefined ? data.name : existingTeam.displayName,
-                        prefix: data.prefix !== undefined ? data.prefix : existingTeam.prefix,
-                        suffix: data.suffix !== undefined ? data.suffix : existingTeam.suffix,
-                        color: data.color !== undefined ? data.color : existingTeam.color,
-                        players: data.players ? new Set(data.players.map(p => stripColorCodes(p))) : existingTeam.players
-                    };
-                    this.teams.set(team, updatedTeam);
-                } else {
-                    this.teams.set(team, {
-                        displayName: data.name || team,
-                        prefix: data.prefix || '',
-                        suffix: data.suffix || '',
-                        color: data.color || -1,
-                        players: new Set((data.players || []).map(p => stripColorCodes(p)))
-                    });
-                }
+            case 'entity_look':
+                this.movementHandler.handleEntityLook(data);
                 break;
-            case 1:
-                this.teams.delete(team);
+            case 'entity_move_look':
+                this.movementHandler.handleEntityMoveLook(data);
                 break;
-            case 3:
-                let t = this.teams.get(team);
-                if (!t) {
-                    t = {
-                        displayName: team,
-                        prefix: '',
-                        suffix: '',
-                        color: -1,
-                        players: new Set()
-                    };
-                    this.teams.set(team, t);
-                }
-                if (data.players) {
-                    data.players.forEach(p => t.players.add(stripColorCodes(p)));
-                }
+            case 'entity_teleport':
+                this.movementHandler.handleEntityTeleport(data);
                 break;
-            case 4:
-                let tm = this.teams.get(team);
-                if (!tm) {
-                    tm = {
-                        displayName: team,
-                        prefix: '',
-                        suffix: '',
-                        color: -1,
-                        players: new Set()
-                    };
-                    this.teams.set(team, tm);
-                }
-                if (data.players) {
-                    data.players.forEach(p => tm.players.delete(stripColorCodes(p)));
-                }
-                break;
-        }
-    }
 
-    updateScoreboard(data) {
-        const { name, action } = data;
-        
-        switch (action) {
-            case 0:
-            case 2:
-                this.scoreboards.set(name, {
-                    displayName: data.displayText,
-                    type: data.type || 'integer',
-                    scores: new Map()
-                });
-                break;
-            case 1:
-                this.scoreboards.delete(name);
-                break;
-        }
-    }
 
-    updateScore(data) {
-        const { scoreName, action, objective, value } = data;
-        
-        if (action === 1) {
-            this.scoreboards.forEach(scoreboard => {
-                scoreboard.scores.delete(scoreName);
-            });
-        } else {
-            const scoreboard = this.scoreboards.get(objective);
-            if (scoreboard) {
-                scoreboard.scores.set(scoreName, value);
-            }
+            case 'set_slot':
+                this.inventoryHandler.handleSetSlot(data);
+                break;
+            case 'window_items':
+                this.inventoryHandler.handleWindowItems(data);
+                break;
+
+
+            case 'scoreboard_team':
+                this.miscHandler.handleTeam(data);
+                break;
+            case 'scoreboard_objective':
+                this.miscHandler.handleScoreboard(data);
+                break;
+            case 'scoreboard_score':
+                this.miscHandler.handleScore(data);
+                break;
         }
     }
 
@@ -468,4 +218,4 @@ class GameState {
     }
 }
 
-module.exports = GameState; 
+module.exports = GameState;

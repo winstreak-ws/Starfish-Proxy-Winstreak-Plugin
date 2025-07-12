@@ -218,51 +218,11 @@ class Events extends EventEmitter {
     }
     
     canModifyPacket(direction, packetName) {
+        if (this.proxy.packetSystem && this.proxy.packetSystem.handler) {
+            return this.proxy.packetSystem.handler.isSafePacket(direction, packetName);
+        }   
         const restrictedSet = this.restrictedPackets[direction];
         return !restrictedSet.has(packetName);
-    }
-    
-    createPacketEvent(direction, packetName, data, meta) {
-        const canModify = this.canModifyPacket(direction, packetName);
-        let cancelled = false;
-        let modified = false;
-        let modifiedData = null;
-        
-        const event = {
-            data,
-            meta,
-            cancelled: false,
-            modified: false,
-            
-            cancel: () => {
-                if (!canModify) {
-                    throw new Error(`Cannot cancel packet '${packetName}' - this packet is restricted by safe mode (read-only).`);
-                }
-                cancelled = true;
-                event.cancelled = true;
-            },
-            
-            modify: (newData) => {
-                if (!canModify) {
-                    throw new Error(`Cannot modify packet '${packetName}' - this packet is restricted by safe mode (read-only).`);
-                }
-                modified = true;
-                modifiedData = newData;
-                event.modified = true;
-                event.data = newData;
-            },
-            
-            isCancelled: () => cancelled,
-            isModified: () => modified,
-            getModifiedData: () => modifiedData
-        };
-        
-        return event;
-    }
-    
-    getAllowedPackets(direction) {
-        const allPackets = Object.keys(this.restrictedPackets[direction] || {});
-        return allPackets.filter(packet => this.canModifyPacket(direction, packet));
     }
 }
 

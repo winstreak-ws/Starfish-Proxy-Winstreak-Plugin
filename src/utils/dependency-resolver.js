@@ -69,6 +69,12 @@ class DependencyResolver {
                     continue;
                 }
                 
+                // SECURITY RULE: Official plugins cannot depend on unofficial ones
+                if (plugin.official && !depPlugin.official) {
+                    errors.push(`Official plugin "${pluginName}" cannot depend on unofficial plugin "${dep.name}"`);
+                    continue;
+                }
+                
                 const versionCheck = this._checkDependencyVersion(depPlugin, dep);
                 if (!versionCheck.compatible) {
                     errors.push(`Plugin "${pluginName}" dependency "${dep.name}" version incompatible: ${versionCheck.reason}`);
@@ -78,6 +84,12 @@ class DependencyResolver {
             for (const dep of node.optionalDependencies) {
                 const depPlugin = this.plugins.get(dep.name);
                 if (depPlugin) {
+                    // SECURITY RULE: Official plugins cannot have optional dependencies on unofficial ones
+                    if (plugin.official && !depPlugin.official) {
+                        errors.push(`Official plugin "${pluginName}" cannot have optional dependency on unofficial plugin "${dep.name}"`);
+                        continue;
+                    }
+                    
                     const versionCheck = this._checkDependencyVersion(depPlugin, dep);
                     if (!versionCheck.compatible) {
                         errors.push(`Plugin "${pluginName}" optional dependency "${dep.name}" version incompatible: ${versionCheck.reason}`);
@@ -199,7 +211,25 @@ class DependencyResolver {
             loadOrder.push(pluginName);
         };
         
-        for (const pluginName of this.plugins.keys()) {
+        // Load official plugins first, then unofficial plugins
+        const officialPlugins = [];
+        const unofficialPlugins = [];
+        
+        for (const [pluginName, plugin] of this.plugins) {
+            if (plugin.official) {
+                officialPlugins.push(pluginName);
+            } else {
+                unofficialPlugins.push(pluginName);
+            }
+        }
+        
+        // Process official plugins first
+        for (const pluginName of officialPlugins) {
+            visit(pluginName);
+        }
+        
+        // Then process unofficial plugins
+        for (const pluginName of unofficialPlugins) {
             visit(pluginName);
         }
         

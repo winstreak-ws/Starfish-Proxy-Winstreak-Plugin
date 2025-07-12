@@ -1,18 +1,20 @@
 const Core = require('./core');
-const Players = require('./players');
+const Players = require('./api/player');
 const Events = require('./events');
 const DisplayNames = require('./display-names');
-const Commands = require('./commands');
-const Communication = require('./communication');
-const World = require('./world');
-const Entities = require('./entities');
-const Inventory = require('./inventory');
-const Server = require('./server');
+const Communication = require('./api/chat');
+const Commands = require('./api/command');
+const World = require('./api/world');
+const Entities = require('./api/entity');
+const Inventory = require('./api/inventory');
+const Movement = require('./api/movement');
+const Misc = require('./api/misc');
 const fs = require('fs');
 const path = require('path');
 const { getPluginsDir } = require('../utils/paths');
 const { VersionUtils } = require('../utils/version-utils');
 const { DependencyResolver } = require('../utils/dependency-resolver');
+const { PluginSignatureVerifier } = require('./security/verifier');
 
 class PluginAPI {
     constructor(proxy, metadata) {
@@ -21,6 +23,7 @@ class PluginAPI {
         this.loadedPlugins = [];
         this.proxyVersion = '1.0.0';
         this.dependencyResolver = new DependencyResolver();
+        this.signatureVerifier = new PluginSignatureVerifier();
         
         this.pluginStates = new Map();
         
@@ -28,12 +31,13 @@ class PluginAPI {
         this.playersModule = new Players(proxy, this.core);
         this.events = new Events(proxy, this.core);
         this.displayNames = new DisplayNames(proxy, this.core, this.events);
-        this.commandsModule = new Commands(proxy, this.core);
         this.communicationModule = new Communication(proxy, this.core);
+        this.commandsModule = new Commands(proxy, this.core);
         this.worldModule = new World(proxy, this.core);
         this.entitiesModule = new Entities(proxy, this.core);
         this.inventoryModule = new Inventory(proxy, this.core);
-        this.serverModule = new Server(proxy, this.core);
+        this.movementModule = new Movement(proxy, this.core);
+        this.miscModule = new Misc(proxy, this.core);
         
         this.config = this.core.config;
         this.log = this.core.log.bind(this.core);
@@ -49,19 +53,21 @@ class PluginAPI {
         this.clearCustomDisplayName = this.displayNames.clearCustomDisplayName.bind(this.displayNames);
         this.customDisplayNames = this.displayNames.customDisplayNames;
         
-        // communication methods
+        // chat methods
         this.chat = this.communicationModule.chat.bind(this.communicationModule);
-        this.sound = this.communicationModule.sound.bind(this.communicationModule);
         this.sendTitle = this.communicationModule.sendTitle.bind(this.communicationModule);
         this.sendActionBar = this.communicationModule.sendActionBar.bind(this.communicationModule);
-        this.sendParticle = this.communicationModule.sendParticle.bind(this.communicationModule);
+        this.sendTabComplete = this.communicationModule.sendTabComplete.bind(this.communicationModule);
         
-        // server administration methods
-        this.kick = this.serverModule.kick.bind(this.serverModule);
-        this.sendKeepAlive = this.serverModule.sendKeepAlive.bind(this.serverModule);
-        this.sendTabComplete = this.serverModule.sendTabComplete.bind(this.serverModule);
-        this.sendCustomPayload = this.serverModule.sendCustomPayload.bind(this.serverModule);
-        this.sendLogin = this.serverModule.sendLogin.bind(this.serverModule);
+        // world methods
+        this.sound = this.worldModule.sendSound.bind(this.worldModule);
+        this.sendParticle = this.worldModule.sendParticle.bind(this.worldModule);
+        
+        // misc methods (server administration, scoreboard)
+        this.kick = this.miscModule.kick.bind(this.miscModule);
+        this.sendKeepAlive = this.miscModule.sendKeepAlive.bind(this.miscModule);
+        this.sendCustomPayload = this.miscModule.sendCustomPayload.bind(this.miscModule);
+        this.sendLogin = this.miscModule.sendLogin.bind(this.miscModule);
         
         // inventory/GUI methods
         this.openWindow = this.inventoryModule.openWindow.bind(this.inventoryModule);
@@ -78,8 +84,6 @@ class PluginAPI {
         this.createDispenser = this.inventoryModule.createDispenser.bind(this.inventoryModule);
         this.fillWindow = this.inventoryModule.fillWindow.bind(this.inventoryModule);
         this.clearWindow = this.inventoryModule.clearWindow.bind(this.inventoryModule);
-        
-        this.commands = this.commandsModule.register.bind(this.commandsModule);
         
         Object.defineProperty(this, 'debug', {
             get: () => this.core.debug
@@ -100,9 +104,11 @@ class PluginAPI {
         // player state methods
         this.sendHealth = this.playersModule.sendHealth.bind(this.playersModule);
         this.sendExperience = this.playersModule.sendExperience.bind(this.playersModule);
-        this.sendPosition = this.playersModule.sendPosition.bind(this.playersModule);
         this.sendAbilities = this.playersModule.sendAbilities.bind(this.playersModule);
         this.sendPlayerInfo = this.playersModule.sendPlayerInfo.bind(this.playersModule);
+        
+        // movement methods
+        this.sendPosition = this.movementModule.sendPosition.bind(this.movementModule);
         
         // entity methods
         this.spawnPlayer = this.entitiesModule.spawnPlayer.bind(this.entitiesModule);
@@ -124,7 +130,7 @@ class PluginAPI {
         this.collectEntity = this.entitiesModule.collect.bind(this.entitiesModule);
         this.attachEntity = this.entitiesModule.attach.bind(this.entitiesModule);
         
-        // world methods
+        // world methods (query and world packets)
         this.getTeams = this.worldModule.getTeams.bind(this.worldModule);
         this.getPlayerTeam = this.worldModule.getPlayerTeam.bind(this.worldModule);
         this.sendExplosion = this.worldModule.sendExplosion.bind(this.worldModule);
@@ -134,10 +140,12 @@ class PluginAPI {
         this.sendTimeUpdate = this.worldModule.sendTimeUpdate.bind(this.worldModule);
         this.sendSpawnPosition = this.worldModule.sendSpawnPosition.bind(this.worldModule);
         this.sendGameStateChange = this.worldModule.sendGameStateChange.bind(this.worldModule);
-        this.sendScoreboardObjective = this.worldModule.sendScoreboardObjective.bind(this.worldModule);
-        this.sendScoreboardScore = this.worldModule.sendScoreboardScore.bind(this.worldModule);
-        this.sendScoreboardDisplay = this.worldModule.sendScoreboardDisplay.bind(this.worldModule);
-        this.sendTeams = this.worldModule.sendTeams.bind(this.worldModule);
+        
+        // misc methods (scoreboard)
+        this.sendScoreboardObjective = this.miscModule.sendScoreboardObjective.bind(this.miscModule);
+        this.sendScoreboardScore = this.miscModule.sendScoreboardScore.bind(this.miscModule);
+        this.sendScoreboardDisplay = this.miscModule.sendScoreboardDisplay.bind(this.miscModule);
+        this.sendTeams = this.miscModule.sendTeams.bind(this.miscModule);
     }
     
     setPluginEnabled(pluginName, enabled) {
@@ -351,7 +359,7 @@ class PluginAPI {
         }
     }
     
-    loadPlugins() {
+    async loadPlugins() {
         const pluginsDir = getPluginsDir();
         if (!fs.existsSync(pluginsDir)) {
             console.log('Plugins directory not found, no plugins to load');
@@ -370,6 +378,15 @@ class PluginAPI {
                 const pluginPath = path.join(pluginsDir, file);
                 const pluginName = path.basename(file, '.js');
                 
+                const fileContent = fs.readFileSync(pluginPath, 'utf8');
+                const verification = await this.signatureVerifier.verifyPlugin(fileContent, pluginName);
+                
+                if (verification.signature && !verification.verified) {
+                    console.error(`❌ Plugin ${pluginName} has invalid signature - refusing to load`);
+                    skippedPlugins.push(`${pluginName.charAt(0).toUpperCase() + pluginName.slice(1)} (invalid signature)`);
+                    continue;
+                }
+                
                 const pluginMetadata = {
                     name: pluginName,
                     path: pluginPath,
@@ -378,7 +395,14 @@ class PluginAPI {
                     minVersion: null,
                     maxVersion: null,
                     dependencies: [],
-                    optionalDependencies: []
+                    optionalDependencies: [],
+                    official: verification.isOfficial,
+                    signature: {
+                        verified: verification.verified,
+                        isOfficial: verification.isOfficial,
+                        hash: verification.hash,
+                        reason: verification.reason
+                    }
                 };
                 
                 delete require.cache[require.resolve(pluginPath)];
@@ -406,43 +430,31 @@ class PluginAPI {
                 this.dependencyResolver.addPlugin(pluginMetadata);
                 
             } catch (error) {
-                const displayName = pluginName.charAt(0).toUpperCase() + pluginName.slice(1);
-                skippedPlugins.push(`${displayName} (load error: ${error.message})`);
+                const displayName = pluginName ? pluginName.charAt(0).toUpperCase() + pluginName.slice(1) : 'Unknown';
+                skippedPlugins.push(`${displayName} (parse error: ${error.message})`);
             }
         }
         
         this.dependencyResolver.buildDependencyGraph();
         
-        const cycles = this.dependencyResolver.detectCircularDependencies();
-        if (cycles.length > 0) {
-            cycles.forEach(cycle => {
-                const pluginName = cycle[0];
-                const pluginMeta = pluginMetadataMap.get(pluginName);
-                const displayName = pluginMeta ? pluginMeta.displayName : pluginName.charAt(0).toUpperCase() + pluginName.slice(1);
-                skippedPlugins.push(`${displayName} (circular dependency)`);
-            });
-            return;
-        }
-        
         const dependencyErrors = this.dependencyResolver.validateDependencies();
-        const incompatiblePlugins = new Set();
+        const problematicPlugins = new Set();
         
         if (dependencyErrors.length > 0) {
             dependencyErrors.forEach(error => {
-                const match = error.match(/Plugin "([^"]+)"/);
+                const match = error.match(/plugin "([^"]+)"/i);
                 if (match) {
                     const pluginName = match[1];
                     const pluginMeta = pluginMetadataMap.get(pluginName);
                     const displayName = pluginMeta ? pluginMeta.displayName : pluginName.charAt(0).toUpperCase() + pluginName.slice(1);
                     
-                    incompatiblePlugins.add(pluginName);
-                    if (error.includes('missing dependency')) {
+                    problematicPlugins.add(pluginName);
+                    if (error.includes('cannot depend on unofficial plugin')) {
+                        skippedPlugins.push(`${displayName} (security: official cannot depend on unofficial)`);
+                    } else if (error.includes('missing dependency')) {
                         const depMatch = error.match(/requires missing dependency "([^"]+)"/);
-                        if (depMatch) {
-                            skippedPlugins.push(`${displayName} (missing dependency: ${depMatch[1]})`);
-                        } else {
-                            skippedPlugins.push(`${displayName} (missing dependency)`);
-                        }
+                        const depName = depMatch ? depMatch[1] : 'unknown';
+                        skippedPlugins.push(`${displayName} (missing dependency: ${depName})`);
                     } else if (error.includes('version incompatible')) {
                         skippedPlugins.push(`${displayName} (dependency version conflict)`);
                     } else {
@@ -451,10 +463,34 @@ class PluginAPI {
                 }
             });
             
-            for (const pluginName of incompatiblePlugins) {
+            for (const pluginName of problematicPlugins) {
                 this.dependencyResolver.plugins.delete(pluginName);
                 this.dependencyResolver.dependencyGraph.delete(pluginName);
                 pluginMetadataMap.delete(pluginName);
+                pluginModules.delete(pluginName);
+            }
+            
+            this.dependencyResolver.buildDependencyGraph();
+        }
+        
+        const circularDeps = this.dependencyResolver.detectCircularDependencies();
+        if (circularDeps.length > 0) {
+            circularDeps.forEach(cycle => {
+                cycle.forEach(pluginName => {
+                    const pluginMeta = pluginMetadataMap.get(pluginName);
+                    const displayName = pluginMeta ? pluginMeta.displayName : pluginName.charAt(0).toUpperCase() + pluginName.slice(1);
+                    if (!problematicPlugins.has(pluginName)) {
+                        skippedPlugins.push(`${displayName} (circular dependency)`);
+                        problematicPlugins.add(pluginName);
+                    }
+                });
+            });
+            
+            for (const pluginName of problematicPlugins) {
+                this.dependencyResolver.plugins.delete(pluginName);
+                this.dependencyResolver.dependencyGraph.delete(pluginName);
+                pluginMetadataMap.delete(pluginName);
+                pluginModules.delete(pluginName);
             }
             
             this.dependencyResolver.buildDependencyGraph();
@@ -462,16 +498,15 @@ class PluginAPI {
         
         const loadOrder = this.dependencyResolver.getLoadOrder();
         
-        this._validateAndFixDependencyStates(pluginMetadataMap);
-        
         for (const pluginName of loadOrder) {
             try {
                 const pluginMetadata = pluginMetadataMap.get(pluginName);
                 const plugin = pluginModules.get(pluginName);
+                
                 if (!pluginMetadata || !plugin) {
-                    console.log(`Skipping ${pluginName} - metadata or module not found`);
                     continue;
                 }
+                
                 
                 const pluginEnabled = this._getPluginEnabledState(pluginName);
                 
@@ -493,6 +528,7 @@ class PluginAPI {
                     }
                 } catch (initError) {
                     console.error(`Plugin ${pluginName} initialization failed: ${initError.message}`);
+                    skippedPlugins.push(`${pluginMetadata.displayName} (init error: ${initError.message})`);
                     continue;
                 }
                 
@@ -505,7 +541,9 @@ class PluginAPI {
                     version: pluginMetadata.version,
                     compatible: true,
                     dependencies: pluginMetadata.dependencies || [],
-                    optionalDependencies: pluginMetadata.optionalDependencies || []
+                    optionalDependencies: pluginMetadata.optionalDependencies || [],
+                    signature: pluginMetadata.signature,
+                    isOfficial: pluginMetadata.official === true && pluginMetadata.signature.verified
                 });
                 
                 loadedPlugins.push(pluginMetadata.displayName);
@@ -615,6 +653,32 @@ class PluginAPI {
                 if (!pluginState) {
                     return;
                 }
+                return withEnabledCheck(fn, methodName)(...args);
+            };
+        };
+        
+        const isOfficial = pluginMetadata.official === true && pluginMetadata.signature?.verified === true;
+        
+        const protectedMethod = (fn, methodName) => {
+            return (...args) => {
+                if (!isOfficial) {
+                    throw new Error(`Protected method '${methodName}' requires official plugin signature`);
+                }
+                return withEnabledCheck(fn, methodName)(...args);
+            };
+        };
+        
+        const officialOnlyMethod = (fn, methodName, callerPlugin) => {
+            return (...args) => {
+                if (!callerPlugin) {
+                    return withEnabledCheck(fn, methodName)(...args);
+                }
+                
+                const callerMetadata = this.loadedPlugins.find(p => p.name === callerPlugin);
+                if (!callerMetadata || !callerMetadata.isOfficial) {
+                    throw new Error(`Official method '${methodName}' can only be called by other official plugins`);
+                }
+                
                 return withEnabledCheck(fn, methodName)(...args);
             };
         };
@@ -823,6 +887,15 @@ class PluginAPI {
             commands: (commands) => {
                 return mainAPI.commandsModule.register(pluginMetadata.name, commands);
             },
+            
+            official: {
+                rawIntercept: protectedMethod((direction, packets, handler) => {
+                    console.log(`[SECURITY] Official plugin ${pluginName} using raw packet interception`);
+                    return mainAPI.events.registerPacketInterceptor(direction, packets, handler);
+                }, 'rawIntercept')
+            },
+            
+            isOfficial: () => isOfficial,
             
             _cleanup: () => {
                 for (const interceptorInfo of registeredInterceptors) {

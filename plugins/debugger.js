@@ -1,5 +1,4 @@
 // Advanced debugger/logging system for development
-const __OFFICIAL_PLUGIN__ = true;
 module.exports = (api) => {
     api.metadata({
         name: 'debugger',
@@ -300,4 +299,4 @@ class DebugSystem {
                 return player.name === 'UrchinAPI'; // fallback to UrchinAPI
         }
     }
-} 
+}

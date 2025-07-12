@@ -5,3 +5,5 @@ build/
 .vscode/
 data/
 config/
+.claude/
+scripts/

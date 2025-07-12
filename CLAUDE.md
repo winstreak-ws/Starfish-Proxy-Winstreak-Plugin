@@ -17,6 +17,19 @@ npm start
 
 # Build Windows executable
 npm run build
+
+# In-game proxy commands
+/proxy help                           # Show proxy help
+/proxy server <name>                  # Switch servers
+/proxy addserver <name> <host:port>   # Add new server
+/proxy removeserver <name>            # Remove server
+/proxy reauth                         # Force re-authentication
+/proxy plugins                        # List loaded plugins
+
+# Plugin commands
+/<plugin-name> help                   # Plugin-specific help
+/<plugin-name> config                 # Open plugin config UI
+/<plugin-name> enable/disable         # Toggle plugin state
 ```
 
 ## Architecture Overview
@@ -35,8 +48,10 @@ npm run build
 
 3. **`src/plugin-api/`** - Plugin system core
    - Provides wrapped API instances to plugins
-   - Modules: `players`, `world`, `entities`, `inventory`, `communication`, `commands`, `display-names`, `server`
+   - Modules: `players`, `world`, `entities`, `inventory`, `communication`, `commands`, `display-names`, `server`, `events`, `security`
    - Supports hot-swapping (enable/disable without restart)
+   - Dependency resolution with topological sorting
+   - Official plugin signature verification
 
 4. **`src/command-system/`** - In-game command framework
    - Module-based command organization
@@ -48,6 +63,11 @@ npm run build
    - Plugin data: `data/*.data.json`
    - Auth cache: `auth_cache/[username]/`
 
+6. **`src/packets/`** - Packet processing architecture
+   - Packet security enforcement
+   - Protocol abstraction layer
+   - Safe packet modification system
+
 ### Plugin Architecture
 
 Plugins are loaded from `plugins/` directory and receive a wrapped API that prevents direct access to proxy internals. Each plugin can:
@@ -55,6 +75,15 @@ Plugins are loaded from `plugins/` directory and receive a wrapped API that prev
 - Modify safe packets (chat, display, audio)
 - Register commands with help text
 - Store persistent configuration and data
+- Declare dependencies on other plugins
+- Access protected methods (official plugins only)
+
+Plugin loading follows these steps:
+1. Scan and extract metadata (name, version, dependencies)
+2. Verify signatures for official plugins
+3. Resolve dependency graph
+4. Load in dependency order
+5. Create wrapped API instances per plugin
 
 ### Security Restrictions
 
@@ -70,6 +99,9 @@ Plugins are loaded from `plugins/` directory and receive a wrapped API that prev
    - Respect packet modification restrictions
    - Clean up resources when disabled (automatic for most API calls)
    - Use the config schema system for settings
+   - Follow semantic versioning for plugin versions
+   - Declare dependencies using `metadata.dependencies` object
+   - Official plugins cannot depend on unofficial ones
 
 2. **Command System**:
    - Commands are module-based (e.g., `/proxy help`, `/anticheat toggle`)
@@ -138,9 +170,22 @@ Plugins are loaded from `plugins/` directory and receive a wrapped API that prev
 4. **Testing**: Connect with Minecraft 1.8.9 to localhost:25565
 5. **Building**: Use `npm run build` for distribution
 
+### Plugin Development Checklist
+
+When creating a new plugin:
+1. Define metadata with name, version, and dependencies
+2. Export `enable(api)` and `disable()` functions
+3. Use the wrapped API instance provided to your plugin
+4. Register commands with help text
+5. Define config schema for auto-generated UI
+6. Handle cleanup in `disable()` (most API calls auto-cleanup)
+7. Test enable/disable cycles and dependency interactions
+
 ## Important Notes
 
 - The proxy is designed to be safe for use on Hypixel - respect packet modification restrictions
 - Plugin API versioning is planned but not yet implemented
 - Network configuration options are planned but not yet available
 - Several plugins are in various stages of development
+- Authentication uses Microsoft accounts with rate limiting (2 attempts per 20 seconds)
+- State tracking persists across plugin enable/disable cycles
