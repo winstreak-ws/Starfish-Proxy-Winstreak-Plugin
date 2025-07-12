@@ -2,7 +2,7 @@ const mc = require('minecraft-protocol');
 const path = require('path');
 const fs = require('fs');
 const { PlayerSession } = require('./session');
-const { CommandHandler } = require('./command-system');
+const { CommandHandler } = require('./commands');
 const PluginAPI = require('./plugin-api');
 const { Storage } = require('./storage');
 const { getBaseDir } = require('./utils/paths');
@@ -23,16 +23,16 @@ class MinecraftProxy {
         this.currentPlayer = null;
         this.loginAttempts = new Map();
         
-        this.initializeProxy();
+        this.initializeProxy().catch(console.error);
     }
 
     getBaseDir() {
         return getBaseDir();
     }
 
-    initializeProxy() {
+    async initializeProxy() {
         this.registerProxyCommands();
-        this.pluginAPI.loadPlugins();
+        await this.pluginAPI.loadPlugins();
         this.createServer();
     }
     
@@ -70,7 +70,7 @@ class MinecraftProxy {
                     }
         
         client.on('end', () => {
-            console.log(`Client ${client.username} disconnected`);
+            console.log(`${client.username} disconnected`);
             if (this.currentPlayer) {
                 this.currentPlayer.disconnect('Client disconnected from proxy.');
                 this.currentPlayer = null;

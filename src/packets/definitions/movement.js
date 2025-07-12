@@ -1,0 +1,154 @@
+module.exports = {
+    client: {
+        position: {
+            safe: false,
+            updatesState: true,
+            eventMapping: {
+                name: 'player.move',
+                extractor: (data, session) => ({
+                    player: session._createCurrentPlayerObject(),
+                    position: { x: data.x, y: data.y, z: data.z },
+                    onGround: data.onGround,
+                    rotation: undefined
+                })
+            }
+        },
+        position_look: {
+            safe: false,
+            updatesState: true,
+            eventMapping: {
+                name: 'player.move',
+                extractor: (data, session) => ({
+                    player: session._createCurrentPlayerObject(),
+                    position: { x: data.x, y: data.y, z: data.z },
+                    onGround: data.onGround,
+                    rotation: { yaw: data.yaw, pitch: data.pitch }
+                })
+            }
+        },
+        look: {
+            safe: false,
+            updatesState: true,
+            eventMapping: {
+                name: 'player.move',
+                extractor: (data, session) => ({
+                    player: session._createCurrentPlayerObject(),
+                    position: { ...session.gameState.position },
+                    onGround: data.onGround,
+                    rotation: { yaw: data.yaw, pitch: data.pitch }
+                })
+            }
+        },
+        flying: {
+            safe: false,
+            updatesState: true
+        },
+        entity_action: {
+            safe: false,
+            updatesState: true
+        }
+    },
+    server: {
+        entity_teleport: {
+            safe: false,
+            updatesState: true,
+            eventMapping: {
+                name: 'entity.move',
+                extractor: (data, session) => {
+                    const entity = session.gameState.entities.get(data.entityId);
+                    if (!entity) return null;
+                    
+                    const isPlayer = entity && entity.type === 'player';
+                    return {
+                        entity: entity,
+                        isPlayer: isPlayer,
+                        newPosition: { 
+                            x: data.x / 32, 
+                            y: data.y / 32, 
+                            z: data.z / 32 
+                        },
+                        teleport: true
+                    };
+                }
+            }
+        },
+        rel_entity_move: {
+            safe: false,
+            updatesState: true,
+            eventMapping: {
+                name: 'entity.move',
+                extractor: (data, session) => {
+                    const entity = session.gameState.entities.get(data.entityId);
+                    if (!entity) return null;
+                    
+                    const isPlayer = entity && entity.type === 'player';
+                    return {
+                        entity: entity,
+                        isPlayer: isPlayer,
+                        delta: {
+                            x: data.dX / 32,
+                            y: data.dY / 32,
+                            z: data.dZ / 32
+                        },
+                        onGround: data.onGround
+                    };
+                }
+            }
+        },
+        entity_look: {
+            safe: false,
+            updatesState: true
+        },
+        entity_move_look: {
+            safe: false,
+            updatesState: true,
+            eventMapping: {
+                name: 'entity.move',
+                extractor: (data, session) => {
+                    const entity = session.gameState.entities.get(data.entityId);
+                    if (!entity) return null;
+                    
+                    const isPlayer = entity && entity.type === 'player';
+                    return {
+                        entity: entity,
+                        isPlayer: isPlayer,
+                        delta: {
+                            x: data.dX / 32,
+                            y: data.dY / 32,
+                            z: data.dZ / 32
+                        },
+                        rotation: {
+                            yaw: session.gameState.byteToYaw(data.yaw),
+                            pitch: session.gameState.byteToPitch(data.pitch)
+                        },
+                        onGround: data.onGround
+                    };
+                }
+            }
+        },
+        entity_velocity: {
+            safe: false,
+            updatesState: true,
+            eventMapping: {
+                name: 'entity.velocity',
+                extractor: (data, session) => {
+                    const entity = session.gameState.entities.get(data.entityId);
+                    if (!entity) return null;
+                    
+                    return {
+                        entity: entity,
+                        velocity: {
+                            x: data.velocityX / 8000,
+                            y: data.velocityY / 8000,
+                            z: data.velocityZ / 8000
+                        }
+                    };
+                }
+            }
+        },
+        entity_head_rotation: {
+            safe: false,
+            updatesState: true
+        }
+    }
+};

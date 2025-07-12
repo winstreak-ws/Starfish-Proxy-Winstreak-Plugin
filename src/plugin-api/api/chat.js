@@ -1,4 +1,4 @@
-class Communication {
+class Chat {
     constructor(proxy, core) {
         this.proxy = proxy;
         this.core = core;
@@ -16,36 +16,6 @@ class Communication {
             });
         } catch (error) {
             console.error('Failed to send chat message:', error.message);
-        }
-    }
-    
-    sound(name, x, y, z, volume = 1.0, pitch = 1.0) {
-        if (!this.proxy.currentPlayer?.client) return;
-        
-        if (x === undefined || y === undefined || z === undefined) {
-            const pos = this.proxy.currentPlayer?.gameState?.position;
-            if (pos) {
-                x = pos.x;
-                y = pos.y;
-                z = pos.z;
-            } else {
-                x = 0;
-                y = 100;
-                z = 0;
-            }
-        }
-        
-        try {
-            this.proxy.currentPlayer.client.write('named_sound_effect', {
-                soundName: name,
-                x: Math.floor(x * 8),
-                y: Math.floor(y * 8),
-                z: Math.floor(z * 8),
-                volume: volume,
-                pitch: Math.floor(pitch * 63)
-            });
-        } catch (error) {
-            console.error('Failed to play sound:', error.message);
         }
     }
     
@@ -93,28 +63,18 @@ class Communication {
         }
     }
     
-    sendParticle(particleId, longDistance, x, y, z, offsetX = 0, offsetY = 0, offsetZ = 0, particleData = 0, particleCount = 1, data = []) {
+    sendTabComplete(text) {
         if (!this.proxy.currentPlayer?.client) return false;
         
         try {
-            return this.proxy.currentPlayer.client.write('particle', {
-                particleId,
-                longDistance,
-                x,
-                y,
-                z,
-                offsetX,
-                offsetY,
-                offsetZ,
-                particleData,
-                particleCount,
-                data
+            return this.proxy.currentPlayer.client.write('tab_complete', {
+                text
             });
         } catch (error) {
-            this.core.log(`Failed to send particle: ${error.message}`);
+            this.core.log(`Failed to send tab complete: ${error.message}`);
             return false;
         }
     }
 }
 
-module.exports = Communication; 
+module.exports = Chat;

@@ -175,70 +175,56 @@ class World {
         }
     }
     
-    sendScoreboardObjective(objectiveName, mode, objectiveValue = '', type = 'integer') {
+    sendParticle(particleId, longDistance, x, y, z, offsetX = 0, offsetY = 0, offsetZ = 0, particleData = 0, particleCount = 1, data = []) {
         if (!this.proxy.currentPlayer?.client) return false;
         
         try {
-            return this.proxy.currentPlayer.client.write('scoreboard_objective', {
-                objectiveName,
-                mode,
-                objectiveValue,
-                type
+            return this.proxy.currentPlayer.client.write('particle', {
+                particleId,
+                longDistance,
+                x,
+                y,
+                z,
+                offsetX,
+                offsetY,
+                offsetZ,
+                particleData,
+                particleCount,
+                data
             });
         } catch (error) {
-            this.core.log(`Failed to send scoreboard objective: ${error.message}`);
+            this.core.log(`Failed to send particle: ${error.message}`);
             return false;
         }
     }
     
-    sendScoreboardScore(itemName, action, scoreName, value = 0) {
-        if (!this.proxy.currentPlayer?.client) return false;
+    sendSound(name, x, y, z, volume = 1.0, pitch = 1.0) {
+        if (!this.proxy.currentPlayer?.client) return;
         
-        try {
-            return this.proxy.currentPlayer.client.write('scoreboard_score', {
-                itemName,
-                action,
-                scoreName,
-                value
-            });
-        } catch (error) {
-            this.core.log(`Failed to send scoreboard score: ${error.message}`);
-            return false;
+        if (x === undefined || y === undefined || z === undefined) {
+            const pos = this.proxy.currentPlayer?.gameState?.position;
+            if (pos) {
+                x = pos.x;
+                y = pos.y;
+                z = pos.z;
+            } else {
+                x = 0;
+                y = 100;
+                z = 0;
+            }
         }
-    }
-    
-    sendScoreboardDisplay(position, scoreName) {
-        if (!this.proxy.currentPlayer?.client) return false;
         
         try {
-            return this.proxy.currentPlayer.client.write('scoreboard_display_objective', {
-                position,
-                scoreName
+            this.proxy.currentPlayer.client.write('named_sound_effect', {
+                soundName: name,
+                x: Math.floor(x * 8),
+                y: Math.floor(y * 8),
+                z: Math.floor(z * 8),
+                volume: volume,
+                pitch: Math.floor(pitch * 63)
             });
         } catch (error) {
-            this.core.log(`Failed to send scoreboard display: ${error.message}`);
-            return false;
-        }
-    }
-    
-    sendTeams(team, mode, name = '', prefix = '', suffix = '', friendlyFire = 0, nameTagVisibility = 'always', color = -1, players = []) {
-        if (!this.proxy.currentPlayer?.client) return false;
-        
-        try {
-            return this.proxy.currentPlayer.client.write('teams', {
-                team,
-                mode,
-                name,
-                prefix,
-                suffix,
-                friendlyFire,
-                nameTagVisibility,
-                color,
-                players
-            });
-        } catch (error) {
-            this.core.log(`Failed to send teams: ${error.message}`);
-            return false;
+            console.error('Failed to play sound:', error.message);
         }
     }
 }

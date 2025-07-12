@@ -8,7 +8,8 @@ module.exports = (api) => {
         prefix: '§cAC',
         version: '0.1.0',
         author: 'Hexze',
-        description: 'Advanced cheater detector system (Inspired by github.com/PugrillaDev)'
+        description: 'Advanced cheater detector system (Inspired by github.com/PugrillaDev)',
+        dependencies: []
     });
 
     const anticheat = new AnticheatSystem(api);
@@ -456,7 +457,7 @@ class PlayerData {
     
     isHoldingBlock() {
         const itemId = this.getItemId();
-        return itemId && itemId < 256; // Blocks are typically < 256
+        return itemId && itemId < 256;
     }
     
     isHoldingSword() {
@@ -1000,4 +1001,4 @@ class AnticheatSystem {
             player.lastAlerts[checkName] = Date.now();
         }
     }
-} 
+}
