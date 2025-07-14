@@ -9,8 +9,6 @@ class MiscHandler {
     }
 
     handleTeam(data) {
-        // In MC 1.8.9 protocol, the team identifier is in the 'name' field for modes 0,1,2
-        // but in the 'team' field for modes 3,4
         const team = (data.mode === 3 || data.mode === 4) ? data.team : data.name;
         const { mode } = data;
         
@@ -67,6 +65,13 @@ class MiscHandler {
                 if (data.players) {
                     data.players.forEach(p => {
                         const playerName = stripColorCodes(p);
+                        
+                        for (const [otherTeamName, otherTeam] of this.gameState.teams) {
+                            if (otherTeamName !== team && otherTeam.players.has(playerName)) {
+                                otherTeam.players.delete(playerName);
+                            }
+                        }
+                        
                         t.players.add(playerName);
                     });
                 }

@@ -1,4 +1,4 @@
-/* STARFISH_SIGNATURE: eLECVZsJxhgJ++xAkv/JQbcGtWat2BreI8hO84woWCwYBOU287eDx7Luc+Lqw18ChF3CeOw0S7adGfdmP/jKM3llHCuwy6s5p4OhB88jH/okyPZgXVZy5ZnyAW8Sxx1K40jpgAfTntLKDdCCrvQY36ASZSnj9fxCEW3BqIeopqT4VrKtvhcch9RFgW3TMaMxpdU23Fsf1n+3Klrtg8PhH5O8HEA9ZSsJu92mW2KMDe4k9ga5PXY0B+MbRIKdiF5TOZZ+PdTdEY41JOq762F3l8J2Rf4r1rSSF/UogGNPCYnZKzpUgrqkiKS5Ex0VrLgRf9ruPq39qKlMnX6hC6k+bg== */
+/* STARFISH_SIGNATURE: NAZmulSLOiOWxpxMZKm8aL2dp5DKtOs+LjWjPIFsRxsbp4lDV7IxJvsWaFjN7gjxSwr8o7G99JB+KYq4+zlwmkgNBUXnlAxVfhjWDJdK4r07aD56jwivs0V1fVy7t2lHDL0mqB2KY0+wAjnAy0vBZDQYt1T+wvajE+DHC2fEPaz2Kx//DGrJM2/9lnJST64+4jv9I5t5TEvishaGatIo1BSf0+eDWWezgkPliVnLH7Jadb9zOE5AH0XSSzo3rKU0nE5mHVn35yt5Hqgkw2R3QoxGXXUlM3t8Z1cwLxeIKqo53//Cm+IWA4gyv6oiBS1rg0Tl2g0ihPIbqTmwe3MVTg== */
 // Automatic Denicker
 // Adapted from Pug's Denicker Raven script (github.com/PugrillaDev)
 
@@ -7,7 +7,7 @@ module.exports = (api) => {
         name: 'denicker',
         displayName: 'Denicker',
         prefix: '§cDN',
-        version: '0.1.3',
+        version: '0.1.4',
         author: 'Hexze',
         description: 'Detects and resolves nicked players (Inspired by github.com/PugrillaDev)',
     });
@@ -63,7 +63,9 @@ module.exports = (api) => {
                     description: 'Adds a label to nicked players in tab to indicate they are nicked (and show their real name if available).',
                     onChange: (newValue) => {
                         if (newValue) {
-                            denicker._reapplyDisplayNames();
+                            for (const [uuid, { nickName, realName }] of denicker.nickDisplayNames) {
+                                denicker.setNickDisplayName(uuid, nickName, realName);
+                            }
                         } else {
                             denicker._clearDisplayNames();
                         }
@@ -122,11 +124,8 @@ class Denicker {
 
     registerHandlers() {
         this.api.on('tick', this.onTick.bind(this));
-        this.api.on('player.join', this.onPlayerJoin.bind(this));
-        this.api.on('player.leave', this.onPlayerLeave.bind(this));
         this.api.on('world.change', this.onWorldChange.bind(this));
         this.api.on('plugin.restored', this.onPluginRestored.bind(this));
-        this.api.on('teamUpdate', this.onTeamUpdate.bind(this));
     }
 
     onWorldChange(event) {
@@ -139,15 +138,6 @@ class Denicker {
             this.parsed.clear();
             this.noPrefixTicks.clear();
         }
-    }
-
-    onPlayerJoin(event) {
-    }
-
-    onPlayerLeave(event) {
-    }
-
-    onTeamUpdate(event) {
     }
 
     reset() {
@@ -198,12 +188,12 @@ class Denicker {
             
             const prefix = team?.prefix || '';
             const suffix = team?.suffix || '';
-            const displayName = prefix + name + suffix;
+            const teamFormattedName = prefix + name + suffix;
 
             if (KNOWN_NICK_SKINS.has(hash)) {
                 this.api.debugLog(`Unresolved nick: ${name}`);
                 if (this.api.config.get('showUnresolvedNicks.enabled')) {
-                    this.sendAlert(displayName, null);
+                    this.sendAlert(teamFormattedName, null);
                 }
                 this.setNickDisplayName(uuid, name, null);
                 return;
@@ -213,7 +203,7 @@ class Denicker {
             if (realName && realName !== name) {
                 this.api.debugLog(`Resolved nick: ${name} -> ${realName}`);
                 this.sendCubelifyMessage(realName);
-                this.sendAlert(displayName, realName);
+                this.sendAlert(teamFormattedName, realName);
                 this.setNickDisplayName(uuid, name, realName);
             }
         } catch (e) {
@@ -238,14 +228,6 @@ class Denicker {
         this.api.debugLog('Cleared all denicker display names');
     }
 
-    _reapplyDisplayNames() {
-        for (const [uuid, { nickName, realName }] of this.nickDisplayNames) {
-            const nickSuffix = realName ? ` §7(${realName})` : ` §c[NICK]`;
-            const baseDisplayName = nickName + nickSuffix;
-            this.api.setCustomDisplayName(uuid, baseDisplayName);
-        }
-        this.api.debugLog(`Re-applied ${this.nickDisplayNames.size} denicker display names`);
-    }
 
     sendAlert(playerName, realName) {
         if (!this.api.config.get('alerts.enabled')) {

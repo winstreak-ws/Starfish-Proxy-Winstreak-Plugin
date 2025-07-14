@@ -83,11 +83,43 @@ class Events extends EventEmitter {
         }
         this.eventHandlers.get(event).add(handler);
         
-        return {
-            on: (nextEvent, nextHandler) => {
-                this.on(nextEvent, nextHandler);
-                return this.on(nextEvent, nextHandler);
+        // Return unsubscribe function
+        return () => {
+            const handlers = this.eventHandlers.get(event);
+            if (handlers) {
+                handlers.delete(handler);
+                if (handlers.size === 0) {
+                    this.eventHandlers.delete(event);
+                }
             }
+        };
+    }
+    
+    everyTick(callback) {
+        if (typeof callback !== 'function') {
+            throw new Error('everyTick callback must be a function');
+        }
+        
+        // Create an interval that runs every 50ms (20 TPS)
+        const interval = setInterval(() => {
+            if (!this.core.enabled) {
+                clearInterval(interval);
+                return;
+            }
+            
+            try {
+                callback();
+            } catch (error) {
+                this.core.log(`Error in tick handler: ${error.message}`);
+                if (this.core.debug) {
+                    console.error(error);
+                }
+            }
+        }, 50);
+        
+        // Return cleanup function
+        return () => {
+            clearInterval(interval);
         };
     }
     

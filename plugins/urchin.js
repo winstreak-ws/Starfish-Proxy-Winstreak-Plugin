@@ -7,9 +7,9 @@ module.exports = (api) => {
     api.metadata({
         name: 'urchin',
         displayName: 'Urchin',
-        prefix: '§5UC',
-        version: '2.0.0',
-        author: 'Starfish',
+        prefix: '§5BL',
+        version: '0.1.1',
+        author: 'Hexze',
         description: 'Integration with Urchin API for automatic blacklisting and client tags'
     });
 
@@ -17,177 +17,81 @@ module.exports = (api) => {
     
     const configSchema = [
         {
-            label: 'API Configuration',
-            description: 'Configure Urchin API settings',
+            label: 'API Key',
+            description: 'Configure your Urchin API key',
             defaults: { 
                 api: { 
-                    enabled: true,
-                    apiKey: '',
-                    sources: 'GAME,PARTY'
+                    apiKey: ''
                 }
             },
             settings: [
-                {
-                    type: 'toggle',
-                    key: 'api.enabled',
-                    text: ['DISABLED', 'ENABLED'],
-                    description: 'Enable or disable Urchin tag checking.'
-                },
                 {
                     type: 'text',
                     key: 'api.apiKey',
                     description: 'Your Urchin API key (required for functionality).',
                     placeholder: 'Enter your Urchin API key'
-                },
-                {
-                    type: 'text',
-                    key: 'api.sources',
-                    description: 'Tag sources to check (comma separated).',
-                    placeholder: 'GAME,PARTY'
-                },
-                {
-                    type: 'button',
-                    key: 'api.testConnection',
-                    text: 'Test API',
-                    description: 'Test your API key connection to Urchin. Use "/urchin setkey <key>" to set your API key first',
-                    color: '§a',
-                    handler: (ctx) => {
-                        const apiKey = ctx.config.get('api.apiKey');
-                        
-                        if (!apiKey) {
-                            ctx.sendError('No API key configured. Use "/urchin setkey <your-api-key>" to set it');
-                            return;
-                        }
-                        
-                        ctx.sendSuccess('Testing API connection...');
-                        
-                        const https = require('https');
-                        const options = {
-                            hostname: 'urchin.ws',
-                            path: `/player?key=${apiKey}&sources=GAME`,
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Content-Length': Buffer.byteLength('{"usernames":[]}')
-                            }
-                        };
-
-                        const req = https.request(options, (res) => {
-                            let data = '';
-                            res.on('data', (chunk) => {
-                                data += chunk;
-                            });
-                            res.on('end', () => {
-                                if (res.statusCode === 200) {
-                                    try {
-                                        JSON.parse(data);
-                                        ctx.sendSuccess('API key is valid and working!');
-                                    } catch (e) {
-                                        if (data === "Invalid Key") {
-                                            ctx.sendError('Invalid API key - use "/urchin setkey <key>" to update it');
-                                        } else {
-                                            ctx.sendError('API response parsing failed');
-                                        }
-                                    }
-                                } else {
-                                    ctx.sendError(`API test failed with status ${res.statusCode}`);
-                                }
-                            });
-                        });
-
-                        req.on('error', (err) => {
-                            ctx.sendError(`API test failed: ${err.message}`);
-                        });
-                        
-                        req.write('{"usernames":[]}');
-                        req.end();
-                    }
                 }
             ]
         },
         {
-            label: 'Automatic Features',
-            description: 'Configure automatic tag checking and display',
+            label: 'Alerts',
+            description: 'Configure the plugin\'s chat alerts.',
             defaults: { 
-                automatic: { 
-                    checkOnWho: true,
-                    checkOpponents: true,
-                    checkTeams: true,
-                    showCompletionMessage: true
+                alerts: { 
+                    enabled: true, 
+                    audioAlerts: { enabled: true }, 
+                    alertDelay: 500 
                 }
             },
             settings: [
                 {
                     type: 'toggle',
-                    key: 'automatic.checkOnWho',
+                    key: 'alerts.enabled',
                     text: ['OFF', 'ON'],
-                    description: 'Automatically check tags when /who command is used.'
+                    description: 'Enable or disable all chat alerts.'
                 },
                 {
-                    type: 'toggle',
-                    key: 'automatic.checkOpponents',
+                    type: 'soundToggle',
+                    key: 'alerts.audioAlerts.enabled',
                     text: ['OFF', 'ON'],
-                    description: 'Automatically check tags for opponents in games.'
+                    description: 'Play a sound when a tagged player is found.'
                 },
+                {
+                    type: 'cycle',
+                    key: 'alerts.alertDelay',
+                    description: 'The delay in milliseconds before sending a tag alert.',
+                    displayLabel: 'Delay',
+                    values: [
+                        { text: '0ms', value: 0 },
+                        { text: '500ms', value: 500 },
+                        { text: '1000ms', value: 1000 }
+                    ]
+                }
+            ]
+        },
+        {
+            label: 'Label Tags in Tab',
+            description: 'Enable or disable tab suffixes for tagged players.',
+            defaults: { modifyDisplayNames: { enabled: true } },
+            settings: [
+                {
+                    type: 'toggle',
+                    key: 'modifyDisplayNames.enabled',
+                    text: ['OFF', 'ON'],
+                    description: 'Adds a label to tagged players in tab to indicate their tags.'
+                }
+            ]
+        },
+        {
+            label: 'Check Team Members',
+            description: 'Automatically check tags for team members.',
+            defaults: { automatic: { checkTeams: true } },
+            settings: [
                 {
                     type: 'toggle',
                     key: 'automatic.checkTeams',
                     text: ['OFF', 'ON'],
-                    description: 'Automatically check tags for team members.'
-                },
-                {
-                    type: 'toggle',
-                    key: 'automatic.showCompletionMessage',
-                    text: ['OFF', 'ON'],
-                    description: 'Show completion message after batch checks.'
-                }
-            ]
-        },
-        {
-            label: 'Display Settings',
-            description: 'Configure how tags are displayed',
-            defaults: { 
-                display: { 
-                    addTagsToTab: true,
-                    tagIcon: '⚠',
-                    playSound: true
-                }
-            },
-            settings: [
-                {
-                    type: 'toggle',
-                    key: 'display.addTagsToTab',
-                    text: ['OFF', 'ON'],
-                    description: 'Add tag indicators to player names in tab list.'
-                },
-                {
-                    type: 'text',
-                    key: 'display.tagIcon',
-                    description: 'Icon to display next to tagged players.',
-                    placeholder: '⚠'
-                },
-                {
-                    type: 'toggle',
-                    key: 'display.playSound',
-                    text: ['OFF', 'ON'],
-                    description: 'Play sound when tagged players are found.'
-                }
-            ]
-        },
-        {
-            label: 'Ignored Users',
-            description: 'Users to ignore when checking tags',
-            defaults: { 
-                ignored: { 
-                    users: 'Raccoonism'
-                }
-            },
-            settings: [
-                {
-                    type: 'text',
-                    key: 'ignored.users',
-                    description: 'Comma-separated list of usernames to ignore.',
-                    placeholder: 'username1,username2'
+                    description: 'Automatically check tags for team members in games.'
                 }
             ]
         }
@@ -206,26 +110,28 @@ module.exports = (api) => {
             .description('Add a tag to a player')
             .argument('<player>', 'Player to tag')
             .argument('<tagtype>', 'Type of tag')
-            .argument('[hide_username]', 'Hide username (true/false)', { optional: true })
-            .argument('<reason...>', 'Reason for tag (can be multiple words)')
+            .argument('<reason>', { type: 'greedy', description: 'Reason for tag (can be multiple words)' })
             .handler((ctx) => {
-                urchin.handleTagCommand(ctx.args.player, ctx.args.tagtype, ctx.args.reason, ctx.args.hide_username, false);
+                urchin.handleTagCommand(ctx.args.player, ctx.args.tagtype, ctx.args.reason, false);
             });
         
         registry.command('forcetag')
             .description('Force add a tag to a player (overwrite existing)')
             .argument('<player>', 'Player to tag')
             .argument('<tagtype>', 'Type of tag')
-            .argument('[hide_username]', 'Hide username (true/false)', { optional: true })
-            .argument('<reason...>', 'Reason for tag (can be multiple words)')
+            .argument('<reason>', { type: 'greedy', description: 'Reason for tag (can be multiple words)' })
             .handler((ctx) => {
-                urchin.handleTagCommand(ctx.args.player, ctx.args.tagtype, ctx.args.reason, ctx.args.hide_username, true);
+                urchin.handleTagCommand(ctx.args.player, ctx.args.tagtype, ctx.args.reason, true);
             });
         
         registry.command('setkey')
             .description('Set your Urchin API key')
             .argument('<apikey>', 'Your Urchin API key')
             .handler((ctx) => urchin.handleSetKeyCommand(ctx.args.apikey));
+        
+        registry.command('testapi')
+            .description('Test your Urchin API connection')
+            .handler(() => urchin.handleTestApiCommand());
     });
     
     urchin.registerHandlers();
@@ -262,33 +168,21 @@ class UrchinPlugin {
     }
 
     onChatPacket(event) {
-        if (!this.api.config.get('api.enabled')) return;
-        if (event.data.position === 2) return; // Ignore action bar messages
+        if (!this.api.config.get('alerts.enabled')) return;
+        if (event.data.position === 2) return;
 
         try {
             const text = this.extractTextFromJson(event.data.message);
             const cleanText = this.stripColorCodes(text);
             
             if (cleanText.trim()) {
-                if (cleanText.startsWith('ONLINE:') && this.api.config.get('automatic.checkOnWho')) {
+                if (cleanText.startsWith('ONLINE:')) {
                     const usernames = cleanText
                         .replace('ONLINE:', '')
                         .split(',')
                         .map(name => name.trim())
                         .filter(name => name.length > 0);
                     this.processUsernames(usernames, false);
-                }
-                else if (cleanText.includes('Opponent:') && this.api.config.get('automatic.checkOpponents')) {
-                    const username = this.extractUsername(cleanText.split('Opponent:')[1].trim());
-                    if (username) {
-                        this.processUsernames([username], false);
-                    }
-                }
-                else if (cleanText.startsWith('Team #') && this.api.config.get('automatic.checkTeams')) {
-                    const username = this.extractUsername(cleanText.split(':')[1].trim());
-                    if (username) {
-                        this.processUsernames([username], false);
-                    }
                 }
             }
         } catch (err) {
@@ -297,7 +191,7 @@ class UrchinPlugin {
     }
 
     handleVCommand(args) {
-        if (!this.api.config.get('api.enabled')) {
+        if (!this.api.config.get('alerts.enabled')) {
             this.sendErrorMessage('Urchin tag checking is disabled');
             return;
         }
@@ -314,7 +208,46 @@ class UrchinPlugin {
         }
         
         const usernames = args.split(' ').filter(Boolean);
-        this.processUsernames(usernames, true);
+        this.checkUsernamesOnly(usernames);
+    }
+
+    checkUsernamesOnly(usernames) {
+        this.batchCheckUrchinTags(usernames).then(response => {
+            this.displayTagResults(response, usernames, { infoOnly: true });
+        }).catch(err => {
+            if (err.message === "Invalid API Key") {
+                this.sendErrorMessage('Invalid API key detected. Plugin has been disabled.');
+                this.api.config.set('alerts.enabled', false);
+            } else {
+                this.sendErrorMessage(`Error checking tags: ${err.message}`);
+            }
+        });
+    }
+
+    displayTagResults(response, usernames, options = {}) {
+        const { infoOnly = false } = options;
+        let hasAnyTags = false;
+        
+        for (const username in response.players) {
+            const tags = response.players[username];
+            
+            if (tags && tags.length > 0) {
+                hasAnyTags = true;
+                this.displayTagMessage(username, tags, infoOnly);
+                
+                if (!infoOnly) {
+                    const priorityTag = this.getHighestPriorityTag(tags);
+                    this.updatePlayerDisplayName(username, priorityTag);
+                }
+            }
+        }
+
+        if (hasAnyTags && !infoOnly && this.api.config.get('alerts.audioAlerts.enabled')) {
+            this.api.sound('note.pling');
+        }
+
+        const action = infoOnly ? 'Checked' : 'Found';
+        this.sendInfoMessage(`${action} ${usernames.length} player${usernames.length === 1 ? '' : 's'} - ${hasAnyTags ? 'Found tags!' : 'No tags found'}`);
     }
 
     handleSetKeyCommand(apiKey) {
@@ -325,17 +258,68 @@ class UrchinPlugin {
         
         this.api.config.set('api.apiKey', apiKey.trim());
         this.sendSuccessMessage('API key has been set successfully!');
-        this.sendInfoMessage('You can now test it with /urchin config and clicking the Test API button');
+        this.sendInfoMessage('You can now test it with /urchin testapi');
     }
 
-    handleTagCommand(player, tagType, reason, hideUsername, isForce) {
-        if (!this.api.config.get('api.enabled')) {
+    handleTestApiCommand() {
+        const apiKey = this.api.config.get('api.apiKey');
+        
+        if (!apiKey) {
+            this.sendErrorMessage('No API key configured. Use "/urchin setkey <your-api-key>" to set it');
+            return;
+        }
+        
+        this.sendInfoMessage('Testing API connection...');
+        
+        const options = {
+            hostname: 'urchin.ws',
+            path: `/player?key=${apiKey}&sources=MANUAL`,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength('{"usernames":[]}')
+            }
+        };
+
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => {
+                data += chunk;
+            });
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    try {
+                        JSON.parse(data);
+                        this.sendSuccessMessage('API key is valid and working!');
+                    } catch (e) {
+                        if (data === "Invalid Key") {
+                            this.sendErrorMessage('Invalid API key - use "/urchin setkey <key>" to update it');
+                        } else {
+                            this.sendErrorMessage('API response parsing failed');
+                        }
+                    }
+                } else {
+                    this.sendErrorMessage(`API test failed with status ${res.statusCode}`);
+                }
+            });
+        });
+
+        req.on('error', (err) => {
+            this.sendErrorMessage(`API test failed: ${err.message}`);
+        });
+        
+        req.write('{"usernames":[]}');
+        req.end();
+    }
+
+    handleTagCommand(player, tagType, reason, isForce) {
+        if (!this.api.config.get('alerts.enabled')) {
             this.sendErrorMessage('Urchin tag checking is disabled');
             return;
         }
 
         if (!player || !tagType || !reason) {
-            this.sendErrorMessage(`Usage: /${isForce ? 'forcetag' : 'tag'} <player> <tagtype> <reason> [hide_username]`);
+            this.sendErrorMessage(`Usage: /${isForce ? 'forcetag' : 'tag'} <player> <tagtype> <reason>`);
             this.sendErrorMessage(`Valid tag types: ${this.VALID_TAG_TYPES.join(', ')}`);
             return;
         }
@@ -346,19 +330,19 @@ class UrchinPlugin {
             return;
         }
         
-        const normalizedTagType = tagType.toLowerCase();
+        const normalizedTagType = this.expandTagType(tagType);
         
         if (!this.VALID_TAG_TYPES.includes(normalizedTagType)) {
             this.sendErrorMessage(`Invalid tag type. Valid options: ${this.VALID_TAG_TYPES.join(', ')}`);
+            this.sendErrorMessage(`Short forms: I, C, CC, BC, CCC, A, PS, S, LS`);
             return;
         }
         
         const reasonText = Array.isArray(reason) ? reason.join(' ') : reason;
-        const hideUsernameFlag = hideUsername === 'true' || hideUsername === true;
         
         this.sendInfoMessage(`Processing tag for ${player}...`);
         
-        this.addTagToPlayer(player, normalizedTagType, reasonText, hideUsernameFlag, isForce);
+        this.addTagToPlayer(player, normalizedTagType, reasonText, false, isForce);
     }
 
     async addTagToPlayer(player, tagType, reason, hideUsername, overwrite) {
@@ -415,7 +399,7 @@ class UrchinPlugin {
         } catch (error) {
             if (error.message === "Invalid API Key") {
                 this.sendErrorMessage('Invalid API key detected. Plugin has been disabled.');
-                this.api.config.set('api.enabled', false);
+                this.api.config.set('alerts.enabled', false);
                 return false;
             }
             return false;
@@ -428,7 +412,7 @@ class UrchinPlugin {
         return new Promise((resolve, reject) => {
             const options = {
                 hostname: 'urchin.ws',
-                path: `/player?key=${apiKey}&sources=GAME`,
+                path: `/player?key=${apiKey}&sources=MANUAL`,
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -481,32 +465,12 @@ class UrchinPlugin {
         }
         
         this.batchCheckUrchinTags(filteredUsernames).then(response => {
-            let hasAnyTags = false;
-            
-            for (const username in response.players) {
-                const tags = response.players[username];
-                
-                if (tags && tags.length > 0) {
-                    hasAnyTags = true;
-                    for (const tag of tags) {
-                        this.displayTagMessage(username, tag);
-                        this.updatePlayerDisplayName(username, tag);
-                    }
-                }
-            }
-            
-            if (this.api.config.get('automatic.showCompletionMessage')) {
-                this.sendSuccessMessage('All checks completed');
-            }
-            
-            if (hasAnyTags && this.api.config.get('display.playSound')) {
-                this.api.sound('note.pling');
-            }
+            this.displayTagResults(response, filteredUsernames, { infoOnly: false });
             
         }).catch(err => {
             if (err.message === "Invalid API Key") {
                 this.sendErrorMessage('Invalid API key detected. Plugin has been disabled.');
-                this.api.config.set('api.enabled', false);
+                this.api.config.set('alerts.enabled', false);
             } else {
                 this.sendErrorMessage(`Error checking tags: ${err.message}`);
             }
@@ -514,29 +478,110 @@ class UrchinPlugin {
     }
 
     updatePlayerDisplayName(username, tag) {
-        if (!this.api.config.get('display.addTagsToTab')) return;
+        if (!this.api.config.get('modifyDisplayNames.enabled')) return;
         
         const player = this.api.getPlayerByName(username);
-        if (!player) return;
+        if (!player) {
+            this.api.debugLog(`Urchin: Could not find player for username: ${username}`);
+            return;
+        }
         
-        const tagIcon = this.api.config.get('display.tagIcon') || '⚠';
+        const tagIcon = this.getTagIcon(tag.type);
         const tagColor = this.getTagColor(tag.type);
-        const tagSuffix = ` §${tagColor}${tagIcon}`;
+        const tagSuffix = ` §8[§${tagColor}${tagIcon}§8]§r`;
+
+        const displayName = player.name + tagSuffix;
         
-        this.taggedDisplayNames.set(player.uuid, { username, tag });
-        this.api.setCustomDisplayName(player.uuid, username + tagSuffix);
+        this.taggedDisplayNames.set(player.uuid, { username: player.name, tag });
+        this.api.setCustomDisplayName(player.uuid, displayName);
     }
 
-    displayTagMessage(username, tag) {
-        const timeAgo = this.getTimeAgo(tag.added_on);
-        const tagType = this.formatTagType(tag.type);
-        const message = `${this.PLUGIN_PREFIX} §f${username} §cis tagged §ffor §c${tagType}§f: ${tag.reason} §7(Added: ${timeAgo})`;
+    getHighestPriorityTag(tags) {
+        const hasNonAccountTags = tags.some(tag => tag.type !== 'account');
+        if (hasNonAccountTags) {
+            const nonAccountTags = tags.filter(tag => tag.type !== 'account');
+            return nonAccountTags[0];
+        }
+
+        return tags[0];
+    }
+
+    displayTagMessage(username, tags, infoOnly = false) {
+        let teamFormattedName = username;
+        if (!infoOnly) {
+            const player = this.api.getPlayerByName(username);
+            const team = player ? this.api.getPlayerTeam(player.name) : null;
+            const prefix = team?.prefix || '';
+            const suffix = team?.suffix || '';
+            teamFormattedName = prefix + username + suffix;
+        }
+        
+        const hoverText = [
+            { text: `§5Urchin Blacklist Tags\n` },
+            { text: `§7§m-------------------------------------§r\n` }
+        ];
+        
+        tags.forEach((tag, index) => {
+            const timeAgo = this.getTimeAgo(tag.added_on);
+            const tagType = this.formatTagType(tag.type);
+            const tagColor = this.getTagColor(tag.type);
+            
+            hoverText.push({ text: `§${tagColor}${tagType} [${tagIcon}]\n` });
+            hoverText.push({ text: `§9"${tag.reason}"\n` });
+            hoverText.push({ text: `§7- Added ${timeAgo}\n` });
+            
+            if (index < tags.length - 1) {
+                hoverText.push({ text: `\n` });
+            }
+        });
+        
+        hoverText.push({ text: `\n§8Click to paste info in chat` });
+
+        const tagComponents = [];
+        tags.forEach((tag, index) => {
+            const tagIcon = this.getTagIcon(tag.type);
+            const tagColor = this.getTagColor(tag.type);
+            const timeAgo = this.getTimeAgo(tag.added_on);
+            const tagType = this.formatTagType(tag.type);
+            
+            tagComponents.push({
+                text: `${index === 0 ? ' ' : ''}§8[§${tagColor}${tagIcon}§8]§r`,
+                hoverEvent: {
+                    action: "show_text",
+                    value: { text: "", extra: hoverText }
+                },
+                clickEvent: {
+                    action: "suggest_command",
+                    value: `⚠ ${username} [${tagType}] | "${tag.reason}" - Added ${timeAgo}`
+                }
+            });
+        });
+
+        const message = {
+            text: `${this.PLUGIN_PREFIX} `,
+            extra: [
+                { 
+                    text: teamFormattedName, 
+                    color: "white",
+                    clickEvent: {
+                        action: "suggest_command",
+                        value: username
+                    },
+                    hoverEvent: {
+                        action: "show_text",
+                        value: { text: "§8Click to put username in chat" }
+                    }
+                },
+                ...tagComponents
+            ]
+        };
+        
         this.api.chat(message);
     }
 
     async batchCheckUrchinTags(usernames) {
         const apiKey = this.api.config.get('api.apiKey');
-        const sources = this.api.config.get('api.sources') || 'GAME,PARTY';
+        const sources = 'MANUAL';
         
         return new Promise((resolve, reject) => {
             const requestBody = { usernames: usernames };
@@ -673,7 +718,7 @@ class UrchinPlugin {
     }
 
     getIgnoredUsers() {
-        const ignoredString = this.api.config.get('ignored.users') || '';
+        const ignoredString = '';
         return ignoredString.split(',').map(name => name.trim()).filter(name => name.length > 0);
     }
 
@@ -731,19 +776,66 @@ class UrchinPlugin {
             .join(' ');
     }
 
+    getTagIcon(type) {
+        switch (type) {
+            case 'info':
+                return 'I';
+            case 'caution':
+                return 'C';
+            case 'closet_cheater':
+                return 'CC';
+            case 'blatant_cheater':
+                return 'BC';
+            case 'confirmed_cheater':
+                return 'CCC';
+            case 'account':
+                return 'A';
+            case 'possible_sniper':
+                return 'PS';
+            case 'sniper':
+                return 'S';
+            case 'legit_sniper':
+                return 'LS';
+            default:
+                return '?';
+        }
+    }
+
+    expandTagType(shortForm) {
+        const shortFormMap = {
+            'i': 'info',
+            'c': 'caution',
+            'cc': 'closet_cheater',
+            'bc': 'blatant_cheater',
+            'ccc': 'confirmed_cheater',
+            'a': 'account',
+            'ps': 'possible_sniper',
+            's': 'sniper',
+            'ls': 'legit_sniper'
+        };
+        
+        const normalized = shortForm.toLowerCase();
+        return shortFormMap[normalized] || normalized;
+    }
+
     getTagColor(type) {
         switch (type) {
             case 'info':
                 return '7'; // light_gray
             case 'closet_cheater':
+                return '6'; // gold
             case 'blatant_cheater':
+                return '6'; // gold
             case 'account':
+                return '6'; // gold
             case 'caution':
                 return '6'; // gold
             case 'confirmed_cheater':
                 return '5'; // dark_purple
             case 'sniper':
+                return '4'; // dark_red
             case 'legit_sniper':
+                return 'c'; // red
             case 'possible_sniper':
                 return 'c'; // red
             default:

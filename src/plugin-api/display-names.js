@@ -109,6 +109,7 @@ class DisplayNames {
         const teamName = event.name;
         const mode = event.mode;
         
+        
         if (!teamName || mode === undefined) return;
         
         if (mode >= 0 && mode <= 4) {

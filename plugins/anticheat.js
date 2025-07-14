@@ -69,7 +69,17 @@ module.exports = (api) => {
     api.configSchema(configSchema);
     
     anticheat.registerHandlers();
-    return anticheat;
+
+    return {
+        enable: () => {
+            anticheat.refreshConfigConstants();
+            api.debugLog('Anticheat plugin enabled');
+        },
+        disable: () => {
+            anticheat.cleanup();
+            api.debugLog('Anticheat plugin disabled');
+        }
+    };
 };
 
 
@@ -545,7 +555,7 @@ class AnticheatSystem {
     }
     
     registerHandlers() {
-        this.api.everyTick(() => {
+        this.unsubscribeTick = this.api.everyTick(() => {
             for (const [uuid, player] of this.playersByUuid) {
                 if (player.swingProgress > 0) {
                     player.swingProgress = Math.max(0, player.swingProgress - 1);
@@ -553,31 +563,41 @@ class AnticheatSystem {
             }
         });
 
-        this.api.on('world.change', () => {
+        this.unsubscribeWorldChange = this.api.on('world.change', () => {
             this.api.debugLog('World change detected, clearing data.');
             this.reset();
         });
         
-        this.api.on('plugin.restored', (event) => {
+        this.unsubscribePluginRestored = this.api.on('plugin.restored', (event) => {
             if (event.pluginName === 'anticheat') {
                 this.api.debugLog('Anticheat plugin restored, clearing data.');
                 this.reset();
             }
         });
         
-        this.api.on('player.move', (event) => {
-            this.handlePlayerMove(event);
+        this.unsubscribeEntityMove = this.api.on('entity.move', (event) => {
+            if (event.isPlayer && event.entity) {
+                this.handleEntityMove(event);
+            }
         });
         
-        this.api.on('player.action', (event) => {
-            this.handlePlayerAction(event);
+        this.unsubscribeEntityAnimation = this.api.on('entity.animation', (event) => {
+            if (event.isPlayer && event.entity) {
+                this.handleEntityAnimation(event);
+            }
         });
         
-        this.api.on('player.join', (event) => {
+        this.unsubscribeEntityMetadataChange = this.api.on('entity.metadata', (event) => {
+            if (event.entity && event.entity.type === 'player') {
+                this.handleEntityMetadata(event);
+            }
+        });
+        
+        this.unsubscribePlayerJoin = this.api.on('player.join', (event) => {
             this.handlePlayerJoin(event);
         });
         
-        this.api.on('player.leave', (event) => {
+        this.unsubscribePlayerLeave = this.api.on('player.leave', (event) => {
             this.handlePlayerLeave(event);
         });
         
@@ -631,72 +651,133 @@ class AnticheatSystem {
         });
     }
     
-    handlePlayerMove(event) {
-        if (!event.player || !event.player.uuid || event.player.isCurrentPlayer) return;
+    handleEntityMove(event) {
+        if (!event.entity || !event.entity.playerUUID) return;
         
-        const player = this.getOrCreatePlayer(event.player);
+        const playerData = {
+            name: event.entity.name || 'Unknown',
+            uuid: event.entity.playerUUID,
+            entityId: event.entity.entityId,
+            displayName: event.entity.name || 'Unknown'
+        };
+        
+        const player = this.getOrCreatePlayer(playerData);
         if (!player) return;
         
-        player.updatePosition(
-            event.position.x,
-            event.position.y,
-            event.position.z,
-            event.onGround,
-            event.rotation?.yaw,
-            event.rotation?.pitch
-        );
+        this.api.debugLog(`[AC] Entity move: ${player.displayName} - Type: ${event.teleport ? 'teleport' : 'relative'}`);
+        
+        if (event.newPosition) {
+            player.updatePosition(
+                event.newPosition.x,
+                event.newPosition.y,
+                event.newPosition.z,
+                true,
+                event.rotation?.yaw,
+                event.rotation?.pitch
+            );
+        } else if (event.delta) {
+            const newX = player.position.x + event.delta.x;
+            const newY = player.position.y + event.delta.y;
+            const newZ = player.position.z + event.delta.z;
+            
+            player.updatePosition(
+                newX,
+                newY,
+                newZ,
+                event.onGround !== undefined ? event.onGround : player.onGround,
+                event.rotation?.yaw,
+                event.rotation?.pitch
+            );
+        }
         
         this.runChecks(player);
     }
     
-    handlePlayerAction(event) {
-        if (!event.player || !event.player.uuid || event.player.isCurrentPlayer) return;
+    handleEntityAnimation(event) {
+        if (!event.entity || !event.entity.playerUUID) return;
         
-        const player = this.getOrCreatePlayer(event.player);
+        const playerData = {
+            name: event.entity.name || 'Unknown',
+            uuid: event.entity.playerUUID,
+            entityId: event.entity.entityId,
+            displayName: event.entity.name || 'Unknown'
+        };
+        
+        const player = this.getOrCreatePlayer(playerData);
         if (!player) return;
         
-        if (event.type === 'swing') {
+        if (event.animation === 0) {
             player.swingProgress = 6;
             player.lastSwingTime = Date.now();
             player.lastSwingItem = player.heldItem;
-
-        } else if (event.type === 'crouch') {
-            const wasCrouching = player.isCrouching;
-            player.isCrouching = event.value;
-            const currentTime = Date.now();
-            
-            if (player.isCrouching && !wasCrouching) {
-                player.lastCrouchTime = currentTime;
-                player.currentShiftStart = currentTime;
-                player.shiftEvents.push({
-                    type: 'start',
-                    timestamp: currentTime,
-                    position: { ...player.position }
-                });
-                
-                if (player.shiftEvents.length > 50) {
-                    player.shiftEvents.shift();
+        }
+        
+        this.runChecks(player);
+    }
+    
+    handleEntityMetadata(event) {
+        if (!event.entity || !event.entity.playerUUID) return;
+        
+        const playerData = {
+            name: event.entity.name || 'Unknown',
+            uuid: event.entity.playerUUID,
+            entityId: event.entity.entityId,
+            displayName: event.entity.name || 'Unknown'
+        };
+        
+        const player = this.getOrCreatePlayer(playerData);
+        if (!player) return;
+        
+        if (event.metadata && Array.isArray(event.metadata)) {
+            event.metadata.forEach(meta => {
+                if (meta.key === 0 && meta.type === 0) {
+                    const flags = meta.value;
+                    const currentTime = Date.now();
+                    
+                    const wasCrouching = player.isCrouching;
+                    player.isCrouching = !!(flags & 0x02);
+                    
+                    if (player.isCrouching && !wasCrouching) {
+                        player.lastCrouchTime = currentTime;
+                        player.currentShiftStart = currentTime;
+                        player.shiftEvents.push({
+                            type: 'start',
+                            timestamp: currentTime,
+                            position: { ...player.position }
+                        });
+                        
+                        if (player.shiftEvents.length > 50) {
+                            player.shiftEvents.shift();
+                        }
+                    } else if (!player.isCrouching && wasCrouching) {
+                        player.lastStopCrouchTime = currentTime;
+                        const duration = player.currentShiftStart ? currentTime - player.currentShiftStart : 0;
+                        player.shiftEvents.push({
+                            type: 'stop',
+                            timestamp: currentTime,
+                            position: { ...player.position },
+                            duration: duration
+                        });
+                        player.currentShiftStart = null;
+                        
+                        if (player.shiftEvents.length > 50) {
+                            player.shiftEvents.shift();
+                        }
+                    }
+                    
+                    player.isSprinting = !!(flags & 0x08);
+                    
+                    const wasUsingItem = player.isUsingItem;
+                    player.isUsingItem = !!(flags & 0x10);
+                    
+                    if (player.isUsingItem && !wasUsingItem && player.isHoldingSword()) {
+                        player.isBlocking = true;
+                        player.blockingStartTime = currentTime;
+                    } else if (!player.isUsingItem && wasUsingItem) {
+                        player.isBlocking = false;
+                    }
                 }
-            } else if (!player.isCrouching && wasCrouching) {
-                player.lastStopCrouchTime = currentTime;
-                const duration = player.currentShiftStart ? currentTime - player.currentShiftStart : 0;
-                player.shiftEvents.push({
-                    type: 'stop',
-                    timestamp: currentTime,
-                    position: { ...player.position },
-                    duration: duration
-                });
-                player.currentShiftStart = null;
-                
-                if (player.shiftEvents.length > 50) {
-                    player.shiftEvents.shift();
-                }
-            }
-            
-            player.lastCrouching = player.isCrouching;
-        } else if (event.type === 'sprint') {
-            player.isSprinting = event.value;
-            player.lastSprinting = player.isSprinting;
+            });
         }
         
         this.runChecks(player);
@@ -913,6 +994,30 @@ class AnticheatSystem {
     }
     
     cleanup() {
+        if (this.unsubscribeTick) {
+            this.unsubscribeTick();
+        }
+        if (this.unsubscribeWorldChange) {
+            this.unsubscribeWorldChange();
+        }
+        if (this.unsubscribePluginRestored) {
+            this.unsubscribePluginRestored();
+        }
+        if (this.unsubscribeEntityMove) {
+            this.unsubscribeEntityMove();
+        }
+        if (this.unsubscribeEntityAnimation) {
+            this.unsubscribeEntityAnimation();
+        }
+        if (this.unsubscribeEntityMetadataChange) {
+            this.unsubscribeEntityMetadataChange();
+        }
+        if (this.unsubscribePlayerJoin) {
+            this.unsubscribePlayerJoin();
+        }
+        if (this.unsubscribePlayerLeave) {
+            this.unsubscribePlayerLeave();
+        }
         if (this.unsubscribeRespawn) {
             this.unsubscribeRespawn();
         }

@@ -42,10 +42,12 @@ class PluginAPI {
         this.config = this.core.config;
         this.log = this.core.log.bind(this.core);
         this.debugLog = this.core.debugLog.bind(this.core);
+        this.getPrefix = () => `§8[§r${this.proxy.PROXY_PREFIX}§8-§r${this.metadata.prefix}§8]§r`;
         
         this.on = this.events.on.bind(this.events);
         this.emit = this.events.emit.bind(this.events);
         this.intercept = this.events.intercept.bind(this.events);
+        this.everyTick = this.events.everyTick.bind(this.events);
         
         this.setCustomDisplayName = this.displayNames.setCustomDisplayName.bind(this.displayNames);
         this.updatePlayerList = this.displayNames.updatePlayerList.bind(this.displayNames);
@@ -55,6 +57,7 @@ class PluginAPI {
         
         // chat methods
         this.chat = this.communicationModule.chat.bind(this.communicationModule);
+        this.chatInteractive = this.communicationModule.chatInteractive.bind(this.communicationModule);
         this.sendTitle = this.communicationModule.sendTitle.bind(this.communicationModule);
         this.sendActionBar = this.communicationModule.sendActionBar.bind(this.communicationModule);
         this.sendTabComplete = this.communicationModule.sendTabComplete.bind(this.communicationModule);

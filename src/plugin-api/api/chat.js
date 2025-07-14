@@ -8,14 +8,51 @@ class Chat {
         if (!this.proxy.currentPlayer?.client) return;
         
         try {
+            let chatMessage;
+            
+            if (typeof message === 'object' && message !== null) {
+                chatMessage = JSON.stringify(message);
+            }
+            else if (typeof message === 'string' && message.trim().startsWith('{') && message.trim().endsWith('}')) {
+                try {
+                    JSON.parse(message);
+                    chatMessage = message;
+                } catch (e) {
+                    chatMessage = JSON.stringify({ text: message });
+                }
+            }
+            else {
+                chatMessage = JSON.stringify({ text: message });
+            }
+            
             this.proxy.currentPlayer.client.write('chat', {
-                message: JSON.stringify({
-                    text: message
-                }),
+                message: chatMessage,
                 position: 0
             });
         } catch (error) {
             console.error('Failed to send chat message:', error.message);
+        }
+    }
+    
+    chatInteractive(components) {
+        if (!this.proxy.currentPlayer?.client) return;
+        
+        try {
+            let message;
+            
+            if (components.text !== undefined || components.extra !== undefined) {
+                message = components;
+            }
+            else if (Array.isArray(components)) {
+                message = { text: "", extra: components };
+            }
+            else {
+                message = { text: "", extra: [components] };
+            }
+            
+            this.chat(message);
+        } catch (error) {
+            console.error('Failed to send interactive chat message:', error.message);
         }
     }
     

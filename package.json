@@ -1,6 +1,6 @@
 {
   "name": "starfish-proxy",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "A Minecraft 1.8.9proxy for Hypixel with advanced plugin support",
   "main": "src/proxy.js",
   "scripts": {
