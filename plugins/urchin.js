@@ -525,6 +525,7 @@ class UrchinPlugin {
             const timeAgo = this.getTimeAgo(tag.added_on);
             const tagType = this.formatTagType(tag.type);
             const tagColor = this.getTagColor(tag.type);
+            const tagIcon = this.getTagIcon(tag.type);
             
             hoverText.push({ text: `§${tagColor}${tagType} [${tagIcon}]\n` });
             hoverText.push({ text: `§9"${tag.reason}"\n` });
