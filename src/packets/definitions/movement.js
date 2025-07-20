@@ -60,7 +60,7 @@ module.exports = {
                     
                     const isPlayer = entity && entity.type === 'player';
                     return {
-                        entity: entity,
+                        entity: { ...entity, entityId: data.entityId },
                         isPlayer: isPlayer,
                         newPosition: { 
                             x: data.x / 32, 
@@ -83,7 +83,7 @@ module.exports = {
                     
                     const isPlayer = entity && entity.type === 'player';
                     return {
-                        entity: entity,
+                        entity: { ...entity, entityId: data.entityId },
                         isPlayer: isPlayer,
                         delta: {
                             x: data.dX / 32,
@@ -110,7 +110,7 @@ module.exports = {
                     
                     const isPlayer = entity && entity.type === 'player';
                     return {
-                        entity: entity,
+                        entity: { ...entity, entityId: data.entityId },
                         isPlayer: isPlayer,
                         delta: {
                             x: data.dX / 32,
@@ -136,7 +136,7 @@ module.exports = {
                     if (!entity) return null;
                     
                     return {
-                        entity: entity,
+                        entity: { ...entity, entityId: data.entityId },
                         velocity: {
                             x: data.velocityX / 8000,
                             y: data.velocityY / 8000,

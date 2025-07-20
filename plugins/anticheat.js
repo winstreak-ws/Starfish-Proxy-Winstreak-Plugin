@@ -6,7 +6,7 @@ module.exports = (api) => {
         name: 'anticheat',
         displayName: 'Anticheat',
         prefix: '§cAC',
-        version: '0.1.0',
+        version: '0.1.1',
         author: 'Hexze',
         description: 'Advanced cheater detector system (Inspired by github.com/PugrillaDev)',
         dependencies: []
@@ -73,11 +73,11 @@ module.exports = (api) => {
     return {
         enable: () => {
             anticheat.refreshConfigConstants();
-            api.debugLog('Anticheat plugin enabled');
+            api.debugLog('[AC] Anticheat plugin enabled with debug logging');
         },
         disable: () => {
             anticheat.cleanup();
-            api.debugLog('Anticheat plugin disabled');
+            api.debugLog('[AC] Anticheat plugin disabled');
         }
     };
 };
@@ -206,7 +206,7 @@ const CHECKS = {
     
     EagleA: {
         config: { 
-            enabled: true, sound: true, vl: 10, cooldown: 2000, 
+            enabled: true, sound: true, vl: 5, cooldown: 2000, 
             description: "Detects diagonal double-shifting eagle (legit scaffold) patterns." 
         },
 
@@ -237,14 +237,14 @@ const CHECKS = {
                            isMovingDiagonal && isMovingFast && hasExcessiveShifts;
 
             if (isEagle) {
-                this.addViolation(player, 'EagleA', 2);
+                this.addViolation(player, 'EagleA', 3);
                 
                 if (this.shouldAlert(player, 'EagleA', config)) {
                     this.flag(player, 'EagleA', player.violations.EagleA);
                     this.markAlert(player, 'EagleA');
                 }
             } else {
-                this.reduceViolation(player, 'EagleA', 1);
+                this.reduceViolation(player, 'EagleA', 3);
             }
         }
     },
@@ -288,7 +288,7 @@ const CHECKS = {
     
     TowerA: {
         config: { 
-            enabled: true, sound: true, vl: 10, cooldown: 2000, 
+            enabled: false, sound: true, vl: 10, cooldown: 2000, 
             description: "Detects ascending (towering) faster than normal while placing blocks below." 
         },
         
@@ -587,12 +587,6 @@ class AnticheatSystem {
             }
         });
         
-        this.unsubscribeEntityMetadataChange = this.api.on('entity.metadata', (event) => {
-            if (event.entity && event.entity.type === 'player') {
-                this.handleEntityMetadata(event);
-            }
-        });
-        
         this.unsubscribePlayerJoin = this.api.on('player.join', (event) => {
             this.handlePlayerJoin(event);
         });
@@ -610,24 +604,20 @@ class AnticheatSystem {
             this.handlePlayerInfo(event.data);
         });
         
-        this.unsubscribeEntitySpawn = this.api.on('packet:server:named_entity_spawn', (event) => {
-            this.handleEntitySpawn(event.data);
+        this.unsubscribeEntitySpawn = this.api.on('player.spawn', (event) => {
+            this.handlePlayerSpawn(event);
         });
         
-        this.unsubscribeEntityDestroy = this.api.on('packet:server:entity_destroy', (event) => {
-            this.handleEntityDestroy(event.data);
+        this.unsubscribeEntityDestroy = this.api.on('entity.remove', (event) => {
+            this.handleEntityRemove(event);
         });
         
-        this.unsubscribeEntityMetadata = this.api.on('packet:server:entity_metadata', (event) => {
-            this.handleEntityMetadata(event.data);
+        this.unsubscribeEntityMetadata = this.api.on('entity.metadata', (event) => {
+            this.handleEntityMetadataFromEvent(event);
         });
         
-        this.unsubscribeEntityTeleport = this.api.on('packet:server:entity_teleport', (event) => {
-            this.handleEntityTeleport(event.data);
-        });
-        
-        this.unsubscribeEntityEquipment = this.api.on('packet:server:entity_equipment', (event) => {
-            this.handleEntityEquipment(event.data);
+        this.unsubscribeEntityEquipment = this.api.on('entity.equipment', (event) => {
+            this.handleEntityEquipmentFromEvent(event);
         });
         
         this.unsubscribeEntityEffect = this.api.on('packet:server:entity_effect', (event) => {
@@ -638,33 +628,41 @@ class AnticheatSystem {
             this.handleRemoveEntityEffect(event.data);
         });
         
-        this.unsubscribeEntityStatus = this.api.on('packet:server:entity_status', (event) => {
-            this.handleEntityStatus(event.data);
+        this.unsubscribeEntityStatus = this.api.on('entity.status', (event) => {
+            this.handleEntityStatusFromEvent(event);
         });
         
-        this.unsubscribePosition = this.api.on('packet:client:position', (event) => {
-            this.userPosition = { x: event.data.x, y: event.data.y, z: event.data.z };
+        this.unsubscribePosition = this.api.on('player.move', (event) => {
+            if (event.player && event.player.isCurrentPlayer) {
+                this.userPosition = event.position;
+            }
         });
         
-        this.unsubscribePositionLook = this.api.on('packet:client:position_look', (event) => {
-            this.userPosition = { x: event.data.x, y: event.data.y, z: event.data.z };
-        });
     }
     
     handleEntityMove(event) {
-        if (!event.entity || !event.entity.playerUUID) return;
+        if (!event.entity || event.entity.type !== 'player' || !event.entity.uuid) return;
+        
+        this.api.debugLog(`[AC] Entity move event received: Entity ID ${event.entity.entityId}, UUID: ${event.entity.uuid}`);
+        
+        const playerInfo = this.api.getPlayerInfo(event.entity.uuid);
+        const playerName = playerInfo?.name || this.uuidToName.get(event.entity.uuid) || 'Unknown';
+        const displayName = this.uuidToDisplayName.get(event.entity.uuid) || playerName;
         
         const playerData = {
-            name: event.entity.name || 'Unknown',
-            uuid: event.entity.playerUUID,
+            name: playerName,
+            uuid: event.entity.uuid,
             entityId: event.entity.entityId,
-            displayName: event.entity.name || 'Unknown'
+            displayName: displayName
         };
         
         const player = this.getOrCreatePlayer(playerData);
-        if (!player) return;
+        if (!player) {
+            this.api.debugLog(`[AC] Failed to get/create player for entity move`);
+            return;
+        }
         
-        this.api.debugLog(`[AC] Entity move: ${player.displayName} - Type: ${event.teleport ? 'teleport' : 'relative'}`);
+        this.api.debugLog(`[AC] Processing move for ${player.displayName} - Type: ${event.teleport ? 'teleport' : 'relative'}`);
         
         if (event.newPosition) {
             player.updatePosition(
@@ -694,13 +692,17 @@ class AnticheatSystem {
     }
     
     handleEntityAnimation(event) {
-        if (!event.entity || !event.entity.playerUUID) return;
+        if (!event.entity || event.entity.type !== 'player' || !event.entity.uuid) return;
+        
+        const playerInfo = this.api.getPlayerInfo(event.entity.uuid);
+        const playerName = playerInfo?.name || this.uuidToName.get(event.entity.uuid) || 'Unknown';
+        const displayName = this.uuidToDisplayName.get(event.entity.uuid) || playerName;
         
         const playerData = {
-            name: event.entity.name || 'Unknown',
-            uuid: event.entity.playerUUID,
+            name: playerName,
+            uuid: event.entity.uuid,
             entityId: event.entity.entityId,
-            displayName: event.entity.name || 'Unknown'
+            displayName: displayName
         };
         
         const player = this.getOrCreatePlayer(playerData);
@@ -715,17 +717,132 @@ class AnticheatSystem {
         this.runChecks(player);
     }
     
-    handleEntityMetadata(event) {
-        if (!event.entity || !event.entity.playerUUID) return;
+    handlePlayerJoin(event) {
+        this.api.debugLog(`Player joined: ${event.player.name}`);
+    }
+    
+    handlePlayerLeave(event) {
+        if (event.player && event.player.uuid) {
+            this.removePlayerByUuid(event.player.uuid);
+        }
+    }
+    
+    getOrCreatePlayer(playerData) {
+        let player = this.playersByUuid.get(playerData.uuid);
         
-        const playerData = {
-            name: event.entity.name || 'Unknown',
-            uuid: event.entity.playerUUID,
-            entityId: event.entity.entityId,
-            displayName: event.entity.name || 'Unknown'
-        };
+        if (!player) {
+            this.api.debugLog(`[AC] Creating new player: ${playerData.name} (${playerData.uuid}) - Entity ID: ${playerData.entityId}`);
+            player = new PlayerData(playerData.name, playerData.uuid, playerData.entityId || -1);
+            player.displayName = playerData.displayName || playerData.name;
+            this.players.set(playerData.name, player);
+            this.playersByUuid.set(playerData.uuid, player);
+            if (playerData.entityId) {
+                this.entityToPlayer.set(playerData.entityId, player);
+            }
+        } else {
+            if (playerData.entityId && player.entityId !== playerData.entityId) {
+                this.api.debugLog(`[AC] Updating entity ID for ${player.displayName}: ${player.entityId} -> ${playerData.entityId}`);
+                if (player.entityId !== -1) {
+                    this.entityToPlayer.delete(player.entityId);
+                }
+                player.entityId = playerData.entityId;
+                this.entityToPlayer.set(playerData.entityId, player);
+            }
+        }
         
-        const player = this.getOrCreatePlayer(playerData);
+        return player;
+    }
+    
+    removePlayerByUuid(uuid) {
+        const player = this.playersByUuid.get(uuid);
+        if (player) {
+            this.players.delete(player.username);
+            this.playersByUuid.delete(uuid);
+
+            for (const [entityId, p] of this.entityToPlayer) {
+                if (p.uuid === uuid) {
+                    this.entityToPlayer.delete(entityId);
+                    break;
+                }
+            }
+        }
+    }
+    
+    handlePlayerInfo(data) {
+        if (data.action === 0) {
+            data.data.forEach(player => {
+                if (player.name && player.UUID) {
+                    this.uuidToName.set(player.UUID, player.name);
+                    let displayName = player.name;
+                    if (player.displayName) {
+                        try {
+                            const parsed = JSON.parse(player.displayName);
+                            displayName = this.extractTextFromJSON(parsed);
+                        } catch (e) {
+                            displayName = player.displayName;
+                        }
+                    }
+                    this.uuidToDisplayName.set(player.UUID, displayName);
+                }
+            });
+        }
+    }
+    
+    handlePlayerSpawn(event) {
+        const data = event.player;
+        
+        const playerName = this.uuidToName.get(data.playerUUID) || 'Unknown';
+        const displayName = this.uuidToDisplayName.get(data.playerUUID) || playerName;
+        const player = new PlayerData(playerName, data.playerUUID, data.entityId);
+        
+        player.displayName = displayName;
+        
+        player.updatePosition(
+            data.position.x,
+            data.position.y,
+            data.position.z,
+            false
+        );
+        
+        player.yaw = data.yaw;
+        player.pitch = data.pitch;
+        
+        this.players.set(playerName, player);
+        this.playersByUuid.set(data.playerUUID, player);
+        this.entityToPlayer.set(data.entityId, player);
+        
+    }
+    
+    handleEntityRemove(event) {
+        event.entities.forEach(entity => {
+            const player = this.entityToPlayer.get(entity.entityId);
+            if (player) {
+                this.players.delete(player.username);
+                this.playersByUuid.delete(player.uuid);
+                this.entityToPlayer.delete(entity.entityId);
+            }
+        });
+    }
+    
+    handleEntityMetadataFromEvent(event) {
+        if (!event.entity || event.entity.type !== 'player') return;
+        
+        let player = this.entityToPlayer.get(event.entity.entityId);
+        
+        if (!player && event.entity.uuid) {
+            const playerInfo = this.api.getPlayerInfo(event.entity.uuid);
+            const playerName = playerInfo?.name || this.uuidToName.get(event.entity.uuid) || 'Unknown';
+            const displayName = this.uuidToDisplayName.get(event.entity.uuid) || playerName;
+            
+            const playerData = {
+                name: playerName,
+                uuid: event.entity.uuid,
+                entityId: event.entity.entityId,
+                displayName: displayName
+            };
+            player = this.getOrCreatePlayer(playerData);
+        }
+        
         if (!player) return;
         
         if (event.metadata && Array.isArray(event.metadata)) {
@@ -776,6 +893,10 @@ class AnticheatSystem {
                     } else if (!player.isUsingItem && wasUsingItem) {
                         player.isBlocking = false;
                     }
+                    
+                    if (player.isUsingItem !== player.lastUsing) {
+                        player.lastUsing = player.isUsingItem;
+                    }
                 }
             });
         }
@@ -783,152 +904,14 @@ class AnticheatSystem {
         this.runChecks(player);
     }
     
-    handlePlayerJoin(event) {
-        this.api.debugLog(`Player joined: ${event.player.name}`);
-    }
-    
-    handlePlayerLeave(event) {
-        if (event.player && event.player.uuid) {
-            this.removePlayerByUuid(event.player.uuid);
-        }
-    }
-    
-    getOrCreatePlayer(playerData) {
-        let player = this.playersByUuid.get(playerData.uuid);
+    handleEntityEquipmentFromEvent(event) {
+        if (!event.entity || !event.isPlayer) return;
         
-        if (!player) {
-            player = new PlayerData(playerData.name, playerData.uuid, playerData.entityId || -1);
-            player.displayName = playerData.displayName || playerData.name;
-            this.players.set(playerData.name, player);
-            this.playersByUuid.set(playerData.uuid, player);
-            if (playerData.entityId) {
-                this.entityToPlayer.set(playerData.entityId, player);
-            }
-        }
-        
-        return player;
-    }
-    
-    removePlayerByUuid(uuid) {
-        const player = this.playersByUuid.get(uuid);
-        if (player) {
-            this.players.delete(player.username);
-            this.playersByUuid.delete(uuid);
-
-            for (const [entityId, p] of this.entityToPlayer) {
-                if (p.uuid === uuid) {
-                    this.entityToPlayer.delete(entityId);
-                    break;
-                }
-            }
-        }
-    }
-    
-    handlePlayerInfo(data) {
-        if (data.action === 0) {
-            data.data.forEach(player => {
-                if (player.name && player.UUID) {
-                    this.uuidToName.set(player.UUID, player.name);
-                    let displayName = player.name;
-                    if (player.displayName) {
-                        try {
-                            const parsed = JSON.parse(player.displayName);
-                            displayName = this.extractTextFromJSON(parsed);
-                        } catch (e) {
-                            displayName = player.displayName;
-                        }
-                    }
-                    this.uuidToDisplayName.set(player.UUID, displayName);
-                }
-            });
-        }
-    }
-    
-    handleEntitySpawn(data) {
-        const playerName = this.uuidToName.get(data.playerUUID) || 'Unknown';
-        const displayName = this.uuidToDisplayName.get(data.playerUUID) || playerName;
-        const player = new PlayerData(playerName, data.playerUUID, data.entityId);
-        
-        player.displayName = displayName;
-        
-        player.updatePosition(
-            data.x / 32.0,
-            data.y / 32.0,
-            data.z / 32.0,
-            false
-        );
-        
-        player.yaw = (data.yaw / 256.0) * 360.0;
-        player.pitch = (data.pitch / 256.0) * 360.0;
-        
-        this.players.set(playerName, player);
-        this.entityToPlayer.set(data.entityId, player);
-        
-        this.api.debugLog(`Player spawned: ${playerName} (${displayName}) - Entity ID: ${data.entityId}`);
-    }
-    
-    handleEntityDestroy(data) {
-        data.entityIds.forEach(entityId => {
-            const player = this.entityToPlayer.get(entityId);
-            if (player) {
-                this.players.delete(player.username);
-                this.entityToPlayer.delete(entityId);
-            }
-        });
-    }
-    
-    handleEntityMetadata(data) {
-        const player = this.entityToPlayer.get(data.entityId);
+        const player = this.entityToPlayer.get(event.entity.entityId);
         if (!player) return;
         
-        data.metadata.forEach(entry => {
-            if (entry.key === 0 && entry.type === 0) {
-                const flags = entry.value;
-                
-                const wasUsingItem = player.isUsingItem;
-                player.isUsingItem = !!(flags & 0x10);
-                
-                if (player.isUsingItem && !wasUsingItem && player.isHoldingSword()) {
-                    player.isBlocking = true;
-                    player.blockingStartTime = Date.now();
-                } else if (!player.isUsingItem && wasUsingItem) {
-                    player.isBlocking = false;
-                }
-                
-                if (player.isUsingItem !== player.lastUsing) {
-                    player.lastUsing = player.isUsingItem;
-                    this.runChecks(player);
-                }
-            }
-        });
-    }
-    
-    handleEntityTeleport(data) {
-        const player = this.entityToPlayer.get(data.entityId);
-        if (!player) return;
-        
-        const newYaw = (data.yaw / 256.0) * 360.0;
-        const newPitch = (data.pitch / 256.0) * 360.0;
-        
-        player.updatePosition(
-            data.x / 32.0,
-            data.y / 32.0,
-            data.z / 32.0,
-            data.onGround || false,
-            newYaw,
-            newPitch
-        );
-        
-        player.yaw = newYaw;
-        player.pitch = newPitch;
-    }
-    
-    handleEntityEquipment(data) {
-        const player = this.entityToPlayer.get(data.entityId);
-        if (!player) return;
-        
-        if (data.slot === 0) {
-            player.heldItem = data.item;
+        if (event.slot === 0) {
+            player.heldItem = event.item;
         }
     }
     
@@ -950,11 +933,13 @@ class AnticheatSystem {
         }
     }
     
-    handleEntityStatus(data) {
-        const player = this.entityToPlayer.get(data.entityId);
+    handleEntityStatusFromEvent(event) {
+        if (!event.entity) return;
+        
+        const player = this.entityToPlayer.get(event.entity.entityId);
         if (!player) return;
 
-        if (data.entityStatus === 2) {
+        if (event.status === 2) {
             player.lastDamaged = Date.now();
         }
     }
@@ -1009,9 +994,6 @@ class AnticheatSystem {
         if (this.unsubscribeEntityAnimation) {
             this.unsubscribeEntityAnimation();
         }
-        if (this.unsubscribeEntityMetadataChange) {
-            this.unsubscribeEntityMetadataChange();
-        }
         if (this.unsubscribePlayerJoin) {
             this.unsubscribePlayerJoin();
         }
@@ -1033,9 +1015,6 @@ class AnticheatSystem {
         if (this.unsubscribeEntityMetadata) {
             this.unsubscribeEntityMetadata();
         }
-        if (this.unsubscribeEntityTeleport) {
-            this.unsubscribeEntityTeleport();
-        }
         if (this.unsubscribeEntityEquipment) {
             this.unsubscribeEntityEquipment();
         }
@@ -1050,9 +1029,6 @@ class AnticheatSystem {
         }
         if (this.unsubscribePosition) {
             this.unsubscribePosition();
-        }
-        if (this.unsubscribePositionLook) {
-            this.unsubscribePositionLook();
         }
         this.reset();
     }

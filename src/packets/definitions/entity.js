@@ -77,9 +77,9 @@ module.exports = {
                     for (const entityId of data.entityIds) {
                         const entity = session.gameState.entities.get(entityId);
                         if (entity) {
-                            entities.push(entity);
+                            entities.push({ ...entity, entityId });
                             if (entity && entity.type === 'player') {
-                                players.push(entity);
+                                players.push({ ...entity, entityId });
                             }
                         }
                     }
@@ -96,7 +96,7 @@ module.exports = {
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     return entity ? {
-                        entity: entity,
+                        entity: { ...entity, entityId: data.entityId },
                         metadata: data.metadata
                     } : null;
                 }
@@ -111,7 +111,7 @@ module.exports = {
                     const entity = session.gameState.entities.get(data.entityId);
                     const isPlayer = entity && entity.type === 'player';
                     return entity ? {
-                        entity: entity,
+                        entity: { ...entity, entityId: data.entityId },
                         isPlayer: isPlayer,
                         slot: data.slot,
                         item: data.item
@@ -127,7 +127,7 @@ module.exports = {
                     const entity = session.gameState.entities.get(data.entityId);
                     const isPlayer = entity && entity.type === 'player';
                     return entity ? {
-                        entity: entity,
+                        entity: { ...entity, entityId: data.entityId },
                         isPlayer: isPlayer,
                         animation: data.animation
                     } : null;
@@ -141,7 +141,7 @@ module.exports = {
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     return entity ? {
-                        entity: entity,
+                        entity: { ...entity, entityId: data.entityId },
                         status: data.entityStatus
                     } : null;
                 }
