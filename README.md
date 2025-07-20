@@ -2,6 +2,10 @@
 
 A personal Minecraft proxy server designed for use with Hypixel, with an advanced plugin system.
 
+## Disclaimer
+
+I heavily utilize Claude Code for this project. I try to the best of my ability to produce quality, readable code but my very limited experience can limit that. If you are a developer and wish to help improve the project or assist, please let me know.
+
 ## TODO
 
 **Things to be finished before release- DM me (@hexze) if you'd like to cross something off the list, and make a pull request**
