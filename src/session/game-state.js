@@ -92,8 +92,10 @@ class GameState {
                 this.entityHandler.handleNamedEntitySpawn(data);
                 break;
             case 'spawn_entity':
-            case 'spawn_entity_living':
                 this.entityHandler.handleSpawnEntity(data);
+                break;
+            case 'spawn_entity_living':
+                this.entityHandler.handleSpawnEntityLiving(data);
                 break;
             case 'entity_destroy':
                 this.entityHandler.handleEntityDestroy(data);

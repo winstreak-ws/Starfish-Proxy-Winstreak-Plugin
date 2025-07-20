@@ -21,7 +21,7 @@ class PluginAPI {
         this.proxy = proxy;
         this.metadata = metadata;
         this.loadedPlugins = [];
-        this.proxyVersion = '1.0.0';
+        this.proxyVersion = '0.1.6';
         this.dependencyResolver = new DependencyResolver();
         this.signatureVerifier = new PluginSignatureVerifier();
         
@@ -377,9 +377,10 @@ class PluginAPI {
         const loadedPlugins = [];
         
         for (const file of pluginFiles) {
+            let pluginName;
             try {
                 const pluginPath = path.join(pluginsDir, file);
-                const pluginName = path.basename(file, '.js');
+                pluginName = path.basename(file, '.js');
                 
                 const fileContent = fs.readFileSync(pluginPath, 'utf8');
                 const verification = await this.signatureVerifier.verifyPlugin(fileContent, pluginName);

@@ -92,12 +92,25 @@ class PacketHandler {
         }
 
         if (definition?.updatesState) {
-            session.gameState.updateFromPacket(meta, data, direction === 'server');
+            try {
+                session.gameState.updateFromPacket(meta, data, direction === 'server');
+            } catch (error) {
+                console.error(`Error updating game state for ${direction} packet ${meta.name}:`, error.message);
+                if (process.env.DEBUG) {
+                    console.error(error.stack);
+                }
+            }
         }
 
         if (definition?.eventMapping && session.connected && session.proxy.currentPlayer === session) {
             setImmediate(() => {
-                this.emitPacketEvent(session, definition.eventMapping, data);
+                try {
+                    this.emitPacketEvent(session, definition.eventMapping, data);
+                } catch (error) {
+                    console.error(`Error emitting event ${definition.eventMapping.name} for packet ${meta.name}:`, error.message);
+                    console.error('Packet data:', JSON.stringify(data, null, 2));
+                    console.error(error.stack);
+                }
             });
         }
     }

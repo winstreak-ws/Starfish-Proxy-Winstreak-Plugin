@@ -564,13 +564,11 @@ class AnticheatSystem {
         });
 
         this.unsubscribeWorldChange = this.api.on('world.change', () => {
-            this.api.debugLog('World change detected, clearing data.');
             this.reset();
         });
         
         this.unsubscribePluginRestored = this.api.on('plugin.restored', (event) => {
             if (event.pluginName === 'anticheat') {
-                this.api.debugLog('Anticheat plugin restored, clearing data.');
                 this.reset();
             }
         });
@@ -595,13 +593,12 @@ class AnticheatSystem {
             this.handlePlayerLeave(event);
         });
         
-        this.unsubscribeRespawn = this.api.on('packet:server:respawn', (event) => {
-            this.api.debugLog('Respawn detected, clearing data.');
+        this.unsubscribeRespawn = this.api.on('world.change', () => {
             this.reset();
         });
         
-        this.unsubscribePlayerInfo = this.api.on('packet:server:player_info', (event) => {
-            this.handlePlayerInfo(event.data);
+        this.unsubscribePlayerInfo = this.api.on('playerList.update', (event) => {
+            this.handlePlayerListUpdate(event);
         });
         
         this.unsubscribeEntitySpawn = this.api.on('player.spawn', (event) => {
@@ -620,14 +617,6 @@ class AnticheatSystem {
             this.handleEntityEquipmentFromEvent(event);
         });
         
-        this.unsubscribeEntityEffect = this.api.on('packet:server:entity_effect', (event) => {
-            this.handleEntityEffect(event.data);
-        });
-        
-        this.unsubscribeRemoveEntityEffect = this.api.on('packet:server:remove_entity_effect', (event) => {
-            this.handleRemoveEntityEffect(event.data);
-        });
-        
         this.unsubscribeEntityStatus = this.api.on('entity.status', (event) => {
             this.handleEntityStatusFromEvent(event);
         });
@@ -637,7 +626,6 @@ class AnticheatSystem {
                 this.userPosition = event.position;
             }
         });
-        
     }
     
     handleEntityMove(event) {
@@ -758,6 +746,17 @@ class AnticheatSystem {
                     break;
                 }
             }
+        }
+    }
+    
+    handlePlayerListUpdate(event) {
+        if (event.players) {
+            event.players.forEach(update => {
+                if (update.name && update.uuid) {
+                    this.uuidToName.set(update.uuid, update.name);
+                    this.uuidToDisplayName.set(update.uuid, update.displayName || update.name);
+                }
+            });
         }
     }
     
@@ -907,24 +906,6 @@ class AnticheatSystem {
         }
     }
     
-    handleEntityEffect(data) {
-        const player = this.entityToPlayer.get(data.entityId);
-        if (!player) return;
-
-        if (data.effectId === 8) {
-            player.hasJumpBoost = true;
-        }
-    }
-
-    handleRemoveEntityEffect(data) {
-        const player = this.entityToPlayer.get(data.entityId);
-        if (!player) return;
-
-        if (data.effectId === 8) {
-            player.hasJumpBoost = false;
-        }
-    }
-    
     handleEntityStatusFromEvent(event) {
         if (!event.entity) return;
         
@@ -949,7 +930,13 @@ class AnticheatSystem {
     }
     
     flag(player, checkName, vl) {
-        const cleanName = player.name || player.displayName?.replace(/§./g, '') || 'Unknown';
+        this.api.debugLog(`[FLAG DEBUG] Player object:`, { 
+            username: player.username, 
+            name: player.name, 
+            displayName: player.displayName,
+            uuid: player.uuid
+        });
+        const cleanName = player.username || player.name || player.displayName?.replace(/§./g, '') || 'Unknown';
         
         const team = this.api.getPlayerTeam(cleanName);
         const prefix = team?.prefix || '';
