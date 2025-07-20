@@ -2,6 +2,15 @@ const mc = require('minecraft-protocol');
 const fs = require('fs');
 const path = require('path');
 
+const chatDefinitions = require('./definitions/chat');
+const entityDefinitions = require('./definitions/entity');
+const inventoryDefinitions = require('./definitions/inventory');
+const miscDefinitions = require('./definitions/misc');
+const missingDefinitions = require('./definitions/missing');
+const movementDefinitions = require('./definitions/movement');
+const playerDefinitions = require('./definitions/player');
+const worldDefinitions = require('./definitions/world');
+
 class PacketHandler {
     constructor() {
         this.definitions = new Map();
@@ -18,13 +27,18 @@ class PacketHandler {
     initialize() {
         if (this.loaded) return;
         
-        const definitionsDir = path.join(__dirname, 'definitions');
-        const files = fs.readdirSync(definitionsDir);
+        const definitionModules = [
+            chatDefinitions,
+            entityDefinitions,
+            inventoryDefinitions,
+            miscDefinitions,
+            missingDefinitions,
+            movementDefinitions,
+            playerDefinitions,
+            worldDefinitions
+        ];
         
-        for (const file of files) {
-            if (!file.endsWith('.js')) continue;
-            
-            const definitions = require(path.join(definitionsDir, file));
+        for (const definitions of definitionModules) {
             this.loadDefinitions(definitions);
         }
         

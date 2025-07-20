@@ -643,8 +643,6 @@ class AnticheatSystem {
     handleEntityMove(event) {
         if (!event.entity || event.entity.type !== 'player' || !event.entity.uuid) return;
         
-        this.api.debugLog(`[AC] Entity move event received: Entity ID ${event.entity.entityId}, UUID: ${event.entity.uuid}`);
-        
         const playerInfo = this.api.getPlayerInfo(event.entity.uuid);
         const playerName = playerInfo?.name || this.uuidToName.get(event.entity.uuid) || 'Unknown';
         const displayName = this.uuidToDisplayName.get(event.entity.uuid) || playerName;
@@ -658,11 +656,8 @@ class AnticheatSystem {
         
         const player = this.getOrCreatePlayer(playerData);
         if (!player) {
-            this.api.debugLog(`[AC] Failed to get/create player for entity move`);
             return;
         }
-        
-        this.api.debugLog(`[AC] Processing move for ${player.displayName} - Type: ${event.teleport ? 'teleport' : 'relative'}`);
         
         if (event.newPosition) {
             player.updatePosition(
@@ -731,7 +726,6 @@ class AnticheatSystem {
         let player = this.playersByUuid.get(playerData.uuid);
         
         if (!player) {
-            this.api.debugLog(`[AC] Creating new player: ${playerData.name} (${playerData.uuid}) - Entity ID: ${playerData.entityId}`);
             player = new PlayerData(playerData.name, playerData.uuid, playerData.entityId || -1);
             player.displayName = playerData.displayName || playerData.name;
             this.players.set(playerData.name, player);
@@ -741,7 +735,6 @@ class AnticheatSystem {
             }
         } else {
             if (playerData.entityId && player.entityId !== playerData.entityId) {
-                this.api.debugLog(`[AC] Updating entity ID for ${player.displayName}: ${player.entityId} -> ${playerData.entityId}`);
                 if (player.entityId !== -1) {
                     this.entityToPlayer.delete(player.entityId);
                 }
@@ -810,7 +803,6 @@ class AnticheatSystem {
         this.players.set(playerName, player);
         this.playersByUuid.set(data.playerUUID, player);
         this.entityToPlayer.set(data.entityId, player);
-        
     }
     
     handleEntityRemove(event) {
