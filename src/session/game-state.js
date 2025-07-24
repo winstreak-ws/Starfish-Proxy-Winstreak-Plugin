@@ -40,7 +40,7 @@ class GameState {
         this.position = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
         this.lastPosition = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
         this.health = 20;
-        this.inventory = { slots: new Array(46).fill(null), heldItemSlot: 0 };
+        this.inventory = { slots: new Array(45).fill({"blockId":-1}), cursorItem: {"blockId":-1}, heldItemSlot: 0 };
     }
 
     updateFromPacket(meta, data, fromServer) {
@@ -56,6 +56,13 @@ class GameState {
         switch (meta.name) {
             case 'held_item_slot':
                 this.inventoryHandler.handleHeldItemSlot(data);
+                break;
+            case 'window_click':
+                // console.log('test');
+                this.inventoryHandler.handleWindowClick(data);
+                break;
+            case 'close_window':
+                this.inventoryHandler.handleCloseWindow(data);
                 break;
             case 'position':
             case 'position_look':
@@ -135,8 +142,15 @@ class GameState {
             case 'window_items':
                 this.inventoryHandler.handleWindowItems(data);
                 break;
-
-
+            case 'open_window':
+                this.inventoryHandler.handleOpenWindow(data);
+                break;
+            case 'close_window':
+                this.inventoryHandler.handleCloseWindow(data);
+                break;
+            case 'transaction':
+                this.inventoryHandler.handleTransaction(data);
+                break;
             case 'scoreboard_team':
                 this.miscHandler.handleTeam(data);
                 break;
