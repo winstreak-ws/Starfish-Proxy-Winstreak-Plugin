@@ -59,8 +59,11 @@ module.exports = {
                     if (!entity) return null;
                     
                     const isPlayer = entity && entity.type === 'player';
+                    const entityWithId = Object.assign({}, entity);
+                    entityWithId.entityId = data.entityId;
+                    
                     return {
-                        entity: entity,
+                        entity: entityWithId,
                         isPlayer: isPlayer,
                         newPosition: { 
                             x: data.x / 32, 
@@ -82,8 +85,11 @@ module.exports = {
                     if (!entity) return null;
                     
                     const isPlayer = entity && entity.type === 'player';
+                    const entityWithId = Object.assign({}, entity);
+                    entityWithId.entityId = data.entityId;
+                    
                     return {
-                        entity: entity,
+                        entity: entityWithId,
                         isPlayer: isPlayer,
                         delta: {
                             x: data.dX / 32,
@@ -109,8 +115,11 @@ module.exports = {
                     if (!entity) return null;
                     
                     const isPlayer = entity && entity.type === 'player';
+                    const entityWithId = Object.assign({}, entity);
+                    entityWithId.entityId = data.entityId;
+                    
                     return {
-                        entity: entity,
+                        entity: entityWithId,
                         isPlayer: isPlayer,
                         delta: {
                             x: data.dX / 32,
@@ -135,8 +144,11 @@ module.exports = {
                     const entity = session.gameState.entities.get(data.entityId);
                     if (!entity) return null;
                     
+                    const entityWithId = Object.assign({}, entity);
+                    entityWithId.entityId = data.entityId;
+                    
                     return {
-                        entity: entity,
+                        entity: entityWithId,
                         velocity: {
                             x: data.velocityX / 8000,
                             y: data.velocityY / 8000,

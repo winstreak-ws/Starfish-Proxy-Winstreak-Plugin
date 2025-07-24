@@ -77,9 +77,12 @@ module.exports = {
                     for (const entityId of data.entityIds) {
                         const entity = session.gameState.entities.get(entityId);
                         if (entity) {
-                            entities.push(entity);
+                            const entityWithId = Object.assign({}, entity);
+                            entityWithId.entityId = entityId;
+                            
+                            entities.push(entityWithId);
                             if (entity && entity.type === 'player') {
-                                players.push(entity);
+                                players.push(entityWithId);
                             }
                         }
                     }
@@ -95,10 +98,15 @@ module.exports = {
                 name: 'entity.metadata',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
-                    return entity ? {
-                        entity: entity,
+                    if (!entity) return null;
+                    
+                    const entityWithId = Object.assign({}, entity);
+                    entityWithId.entityId = data.entityId;
+                    
+                    return {
+                        entity: entityWithId,
                         metadata: data.metadata
-                    } : null;
+                    };
                 }
             }
         },
@@ -109,13 +117,18 @@ module.exports = {
                 name: 'entity.equipment',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
+                    if (!entity) return null;
+                    
                     const isPlayer = entity && entity.type === 'player';
-                    return entity ? {
-                        entity: entity,
+                    const entityWithId = Object.assign({}, entity);
+                    entityWithId.entityId = data.entityId;
+                    
+                    return {
+                        entity: entityWithId,
                         isPlayer: isPlayer,
                         slot: data.slot,
                         item: data.item
-                    } : null;
+                    };
                 }
             }
         },
@@ -125,12 +138,17 @@ module.exports = {
                 name: 'entity.animation',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
+                    if (!entity) return null;
+                    
                     const isPlayer = entity && entity.type === 'player';
-                    return entity ? {
-                        entity: entity,
+                    const entityWithId = Object.assign({}, entity);
+                    entityWithId.entityId = data.entityId;
+                    
+                    return {
+                        entity: entityWithId,
                         isPlayer: isPlayer,
                         animation: data.animation
-                    } : null;
+                    };
                 }
             }
         },
@@ -140,10 +158,15 @@ module.exports = {
                 name: 'entity.status',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
-                    return entity ? {
-                        entity: entity,
+                    if (!entity) return null;
+                    
+                    const entityWithId = Object.assign({}, entity);
+                    entityWithId.entityId = data.entityId;
+                    
+                    return {
+                        entity: entityWithId,
                         status: data.entityStatus
-                    } : null;
+                    };
                 }
             }
         }

@@ -43,9 +43,53 @@ class EntityHandler {
         this.gameState.entities.set(data.entityId, {
             type: data.type,
             position: { x: data.x / 32, y: data.y / 32, z: data.z / 32 },
-            metadata: data.metadata,
+            metadata: data.metadata || [],
             effects: new Map(),
         });
+    }
+
+    handleSpawnEntityLiving(data) {
+        const newEntity = {
+            type: data.type,
+            uuid: data.entityUUID,
+            position: { x: data.x / 32, y: data.y / 32, z: data.z / 32 },
+            lastPosition: { x: data.x / 32, y: data.y / 32, z: data.z / 32 },
+            yaw: this.gameState.byteToYaw(data.yaw),
+            pitch: this.gameState.byteToPitch(data.pitch),
+            headPitch: this.gameState.byteToPitch(data.headPitch),
+            velocity: {
+                x: data.velocityX / 8000,
+                y: data.velocityY / 8000,
+                z: data.velocityZ / 8000
+            },
+            onGround: false,
+            isCrouching: false,
+            isSprinting: false,
+            isUsingItem: false,
+            isOnFire: false,
+            heldItem: null,
+            equipment: {},
+            metadata: data.metadata || [],
+            effects: new Map(),
+            lastDamaged: 0,
+            health: 20
+        };
+
+        const initialFlags = newEntity.metadata.find(m => m.key === 0)?.value || 0;
+        newEntity.isOnFire = (initialFlags & 0x01) !== 0;
+        newEntity.isCrouching = (initialFlags & 0x02) !== 0;
+        newEntity.isSprinting = (initialFlags & 0x08) !== 0;
+        newEntity.isUsingItem = (initialFlags & 0x10) !== 0;
+        
+        const healthMeta = newEntity.metadata.find(m => m.key === 6);
+        if (healthMeta) newEntity.health = healthMeta.value;
+
+        this.gameState.entities.set(data.entityId, newEntity);
+        
+        if (data.entityUUID) {
+            this.gameState.uuidToEntityId.set(data.entityUUID, data.entityId);
+            this.gameState.entityIdToUuid.set(data.entityId, data.entityUUID);
+        }
     }
 
     handleEntityDestroy(data) {
