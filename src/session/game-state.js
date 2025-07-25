@@ -58,7 +58,6 @@ class GameState {
                 this.inventoryHandler.handleHeldItemSlot(data);
                 break;
             case 'window_click':
-                // console.log('test');
                 this.inventoryHandler.handleWindowClick(data);
                 break;
             case 'close_window':

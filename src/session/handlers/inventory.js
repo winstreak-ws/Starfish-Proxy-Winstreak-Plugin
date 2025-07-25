@@ -9,11 +9,15 @@ class InventoryHandler {
         this.containerSizes = new Map(
             [[0, 0]]
         );
-        this.pendingActions = new Map(); // Maps windowId to a Map of actionNumber to action data
+        this.pendingActions = new Map(); // Map<windowId, Map<actionNumber, Action>>
         this.currentContainerId = 0;
         this.currentContainer = null;
         this.dragState = -1;
         this.dragSlots = new Array();
+
+        setInterval(() => {
+            this._pruneStaleActions();
+        }, 5000);
     }
 
     handleHeldItemSlot(data) {
@@ -25,14 +29,20 @@ class InventoryHandler {
             return; // Ignore clicks not in the current container
         }
         const windowId = data.windowId;
+        const actionNumber = data.action;
         const slot = data.slot;
         const item = data.item;
         const cursorItem = this.gameState.inventory.cursorItem
         const button = data.mouseButton;
+        let action;
         switch (data.mode) {
         case 0: // Normal click
             switch (data.mouseButton) {
             case 0: // Left click
+                // Create an action for rollback in case of rejected transaction
+                action = this._createAction(windowId, actionNumber, { [slot]: this._getItem(slot), cursor: lodash.cloneDeep(cursorItem) });
+                this._addAction(action);
+
                 if (slot === -999) { // Left click outside inventory
                     this._setCursorItem(NULL_ITEM);
                     console.log(JSON.stringify(this.gameState.inventory));
@@ -57,6 +67,10 @@ class InventoryHandler {
                 return;
 
             case 1: // Right click
+                // Create an action for rollback in case of rejected transaction
+                action = this._createAction(windowId, actionNumber, { [slot]: this._getItem(slot), cursor: lodash.cloneDeep(cursorItem) });
+                this._addAction(action);
+
                 if (slot === -999) { // Right click outside inventory
                     this._incrementCursorItem(-1);
                     console.log(JSON.stringify(this.gameState.inventory));
@@ -82,6 +96,10 @@ class InventoryHandler {
             }
 
         case 1: // Shift-click
+            // Create an action for rollback in case of rejected transaction
+            action = this._createAction(windowId, actionNumber, null, this._getFullSnapshot());
+            this._addAction(action);
+
             if (windowId === 0) { // No container open
                 if (this._isInHotbar(slot)) { // Shift-click in hotbar, no container open
                     this._setSlot(slot, this._distributeItems(this._getItem(slot), ['inventory']));
@@ -114,6 +132,10 @@ class InventoryHandler {
             return;
 
         case 2: // Number key
+            // Create an action for rollback in case of rejected transaction
+            action = this._createAction(windowId, actionNumber, null, this._getFullSnapshot());
+            this._addAction(action);
+
             const numberSlot = this._getSlotFromNumberKey(data.button);
             if (this._isInContainer(slot)) { // Number key pressed while hovering a container slot
                 if (this._isEmpty(slot)) { // The container slot is empty
@@ -140,10 +162,30 @@ class InventoryHandler {
 
         case 3: // Middle click
             // Only in creative mode, not implemented
-            console.log("Middle click not currently implemented for inventory tracking.");
             return;
 
         case 4: // Drop
+            // Create an action for rollback in case of rejected transaction
+            action = this._createAction(windowId, actionNumber, { [slot]: this._getItem(slot), cursor: lodash.cloneDeep(cursorItem) });
+            this._addAction(action);
+
+            if (slot === -999) { // Clicking outside inventory
+                if (this._isEmpty(cursorItem)) {
+                    return;
+                }
+                switch (button) {
+                case 0: // Left click
+                    this._incrementCursorItem(-1);
+                    console.log(JSON.stringify(this.gameState.inventory));
+                    return;
+
+                case 1: // Right click
+                    this._setCursorItem(NULL_ITEM);
+                    console.log(JSON.stringify(this.gameState.inventory));
+                    return;
+                }
+            }
+
             switch (data.button) {
             case 0: // Q
                 this._incrementSlot(slot, -1);
@@ -157,6 +199,10 @@ class InventoryHandler {
             }
 
         case 5: // Drag
+            // Create an action for rollback in case of rejected transaction
+            action = this._createAction(windowId, actionNumber, null, this._getFullSnapshot());
+            this._addAction(action);
+
             if (this.dragMode === -1) { // Not currently dragging, start drag
                 if (slot === -999) {
                     this.dragMode = button;
@@ -189,6 +235,10 @@ class InventoryHandler {
             }
 
         case 6: // Double click
+            // Create an action for rollback in case of rejected transaction
+            action = this._createAction(windowId, actionNumber, null, this._getFullSnapshot());
+            this._addAction(action);
+
             this._gatherToCursor(cursorItem)
             console.log(JSON.stringify(this.gameState.inventory));
             return;
@@ -204,7 +254,6 @@ class InventoryHandler {
     handleSetSlot(data) {
         if (data.slot === -1) {
             this._setCursorItem(data.item);
-            console.log(JSON.stringify(this.gameState.inventory));
             return;
         }
         if (data.windowId === 0 && data.slot >= 0 && data.slot < 45) { // No container open
@@ -219,7 +268,6 @@ class InventoryHandler {
                 this.gameState.inventory.slots[data.slot - this.containerSizes.get(data.windowId) + 9] = data.item;
             }
         }
-        console.log(JSON.stringify(this.gameState.inventory));
     }
 
     handleWindowItems(data) {
@@ -230,7 +278,6 @@ class InventoryHandler {
             for (let i = 0; i < 36; i++) {
                 this.gameState.inventory.slots[i + 9] = inventoryData[i] || NULL_ITEM;
             }
-            console.log(JSON.stringify(this.gameState.inventory.slots));
             if (data.windowId !== this.currentContainerId) {
                 return; // Ignore items not in the current container
             }
@@ -239,41 +286,87 @@ class InventoryHandler {
     }
 
     handleOpenWindow(data) {
-        console.log(`Opening window ${data.windowId}`);
         this.currentContainerId = data.windowId;
         this.currentContainer = new Array(data.slotCount).fill(NULL_ITEM);
         this.containerSizes.set(data.windowId, data.slotCount);
     }
 
-    // Not currently implemented
     handleTransaction(data) {
-        return;
-        // const { windowId, actionNumber, accepted } = data;
         const windowActions = this.pendingActions.get(data.windowId);
         if (!windowActions) return;
 
         const action = windowActions.get(data.action);
         if (!action) return;
 
-        console.log(`Transaction for window ${data.windowId}, action ${data.action}, accepted: ${data.accepted}`);
-        if (!data.accepted) {
-        // Revert pre-click state
-        for (const [slot, item] of action.slots.entries()) {
-            this.gameState.inventory.slots[slot] = item;
+        if (data.accepted) {
+            // Transaction accepted, remove the action
+            console.log(`Transaction accepted for action ${data.action} in window ${data.windowId}`);
+            windowActions.delete(data.action);
+        } else { // Transaction rejected, rollback
+            console.log(`Transaction rejected for action ${data.action} in window ${data.windowId}`);
+            if (action.fullSnapshot) {
+                if (action.windowId !== this.currentContainerId) {
+                    return; // Ignore rollbacks not in the current container
+                }
+                this.currentContainer = lodash.cloneDeep(action.fullSnapshot.container);
+                this.gameState.inventory = lodash.cloneDeep(action.fullSnapshot.inventory);
+            } else {
+                for (const [slot, item] of Object.entries(action.rollbackData)) {
+                    if (slot === 'cursor') {
+                        this._setCursorItem(item);
+                    } else if (slot !== -999) {
+                        this._setSlot(slot, item);
+                    }
+                }
+            }
+            windowActions.delete(data.action);
+            console.log(JSON.stringify(this.gameState.inventory));
         }
-        this.gameState.inventory.cursorItem = action.cursor;
-        }
-        // Clear the saved action regardless of accepted or rejected
-        windowActions.delete(data.action);
-
-        // Clean up empty windowActions map
         if (windowActions.size === 0) {
-        this.pendingActions.delete(data.windowId);
+            this.pendingActions.delete(data.windowId);
         }
     }
 
-    // Helper methods for window_click packet handling
+    _pruneStaleActions() {
+        const now = Date.now();
+        for (const [windowId, actionMap] of this.pendingActions) {
+            for (const [actionNumber, action] of actionMap) {
+                if (now - action.timestamp > 5000) { // 5 seconds
+                    console.log(`Pruning stale action ${actionNumber} in window ${windowId}`);
+                    actionMap.delete(actionNumber);
+                }
+            }
+            if (actionMap.size === 0) {
+                this.pendingActions.delete(windowId);
+            }
+        }
+    }
 
+    _createAction(windowId, actionNumber, rollbackData, fullSnapshot = null) {
+        return {
+            windowId: windowId,
+            actionNumber: actionNumber,
+            timestamp: Date.now(), // Timestamp so stale actions can be pruned
+            rollbackData: rollbackData,
+            fullSnapshot: fullSnapshot,
+        };
+    }
+
+    _addAction(action) {
+        if (!this.pendingActions.has(action.windowId)) {
+            this.pendingActions.set(action.windowId, new Map());
+        }
+        this.pendingActions.get(action.windowId).set(action.actionNumber, action);
+    }
+
+    _getFullSnapshot() {
+        return {
+            inventory: this.gameState.inventory,
+            container: this.currentContainer ? lodash.cloneDeep(this.currentContainer) : null
+        };
+    }
+
+    // Helper methods for window_click packet handling
     _setSlot(slot, item) {
         const safeItem = (item && item.itemCount <= 0) ? NULL_ITEM : lodash.cloneDeep(item);
         if (this.currentContainerId === 0) {
@@ -287,14 +380,17 @@ class InventoryHandler {
     }
 
     _getItem(slot) {
+        if (slot === -999) {
+            return null;
+        }
         if (this.currentContainerId === 0) {
             return this.gameState.inventory.slots[slot];
-        } else if (slot < this.containerSizes.get(this.currentContainerId)) {
-            return this.currentContainer[slot];
-        } else {
-            const inventoryIndex = slot - this.containerSizes.get(this.currentContainerId) + 9;
-            return this.gameState.inventory.slots[inventoryIndex];
         }
+        if (slot < this.containerSizes.get(this.currentContainerId)) {
+            return this.currentContainer[slot];
+        }
+        const inventoryIndex = slot - this.containerSizes.get(this.currentContainerId) + 9;
+        return this.gameState.inventory.slots[inventoryIndex];
     }
 
     _isEmpty(item) {
@@ -320,7 +416,6 @@ class InventoryHandler {
 
     _incrementCursorItem(int) {
         if (this._isEmpty(this.gameState.inventory.cursorItem)) {
-            console.log('Unable to increment null cursor item');
             return;
         }
         this.gameState.inventory.cursorItem.itemCount += int;
@@ -360,7 +455,6 @@ class InventoryHandler {
 
     _incrementSlot(slot, int) {
         if (this._isEmpty(this._getItem(slot))) {
-            console.log('Unable to increment null slot item');
             return;
         }
         const item = this._getItem(slot);
@@ -374,7 +468,6 @@ class InventoryHandler {
 
     _setSlotCount(slot, count) {
         if (this._isEmpty(this._getItem(slot))) {
-            console.log('Unable to set count of null slot item');
             return;
         }
         const item = this._getItem(slot);
@@ -640,7 +733,6 @@ class InventoryHandler {
                 if (!this._isEmpty(item) && this._areSameItem(item, cursorItem) && item.itemCount < maxStackSize) {
                     const toAdd = Math.min(item.itemCount, maxStackSize - count);
                     count += toAdd;
-                    console.log(`Adding ${toAdd} items from container slot ${i} to cursor`);
                     this._incrementSlot(i, -toAdd);
                     if (count >= maxStackSize) {
                         break;
@@ -657,7 +749,6 @@ class InventoryHandler {
             if (!this._isEmpty(item) && this._areSameItem(item, cursorItem) && item.itemCount < maxStackSize) {
                 const toAdd = Math.min(item.itemCount, maxStackSize - count);
                 count += toAdd;
-                console.log(`Adding ${toAdd} items from slot ${i} to cursor`);
                 this.gameState.inventory.slots[i].itemCount -= toAdd;
                 if (this.gameState.inventory.slots[i].itemCount <= 0) {
                     this.gameState.inventory.slots[i] = NULL_ITEM;
@@ -674,7 +765,6 @@ class InventoryHandler {
                 if (!this._isEmpty(item) && this._areSameItem(item, cursorItem) && item.itemCount === maxStackSize) {
                     const toAdd = Math.min(item.itemCount, maxStackSize - count);
                     count += toAdd;
-                    console.log(`Adding ${toAdd} items from container slot ${i} to cursor`);
                     this._incrementSlot(i, -toAdd);
                 }
             }
@@ -688,7 +778,6 @@ class InventoryHandler {
             if (!this._isEmpty(item) && this._areSameItem(item, cursorItem) && item.itemCount === maxStackSize) {
                 const toAdd = Math.min(item.itemCount, maxStackSize - count);
                 count += toAdd;
-                console.log(`Adding ${toAdd} items from slot ${i} to cursor`);
                 this.gameState.inventory.slots[i].itemCount -= toAdd;
                 if (this.gameState.inventory.slots[i].itemCount <= 0) {
                     this.gameState.inventory.slots[i] = NULL_ITEM;
