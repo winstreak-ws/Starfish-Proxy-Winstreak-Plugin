@@ -45,25 +45,21 @@ class InventoryHandler {
 
                 if (slot === -999) { // Left click outside inventory
                     this._setCursorItem(NULL_ITEM);
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
                 }
 
                 if (this._isEmpty(cursorItem) || this._isEmpty(item)) { // Left click, empty slot or cursor
                     this._swapWithCursor(slot);
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
                 }
 
                 if (this._areSameItem(cursorItem, item)) { // Left click, same item in cursor and slot
                     this._fillSlotFromCursor(slot);
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
                 }
 
                 // Only option left is a left click with different items in cursor and slot
                 this._swapWithCursor(slot);
-                console.log(JSON.stringify(this.gameState.inventory));
                 return;
 
             case 1: // Right click
@@ -73,25 +69,21 @@ class InventoryHandler {
 
                 if (slot === -999) { // Right click outside inventory
                     this._incrementCursorItem(-1);
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
                 }
 
                 if (this._isEmpty(cursorItem)) { // Right click, empty cursor
                     this._moveHalfToCursor(slot);
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
                 }
 
                 if (this._isEmpty(item) || this._areSameItem(item, cursorItem)) { // Right click, empty slot or same item
                     this._moveOneToSlot(slot);
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
                 }
 
                 // Only option left is a right click with different items in cursor and slot
                 this._swapWithCursor(slot);
-                console.log(JSON.stringify(this.gameState.inventory));
                 return;
             }
 
@@ -103,32 +95,27 @@ class InventoryHandler {
             if (windowId === 0) { // No container open
                 if (this._isInHotbar(slot)) { // Shift-click in hotbar, no container open
                     this._setSlot(slot, this._distributeItems(this._getItem(slot), ['inventory']));
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
                 }
 
                 if (this._isInInventory(slot)) { // Shift-click in inventory, no container open
                     this._setSlot(slot, this._distributeItems(this._getItem(slot), ['hotbar']));
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
                 }
 
                 // Only option left is a shift-click in crafting grid with no container open
                 this._setSlot(slot, this._distributeItems(this._getItem(slot), ['inventory', 'hotbar']));
-                console.log(JSON.stringify(this.gameState.inventory));
                 return;
             }
 
             // Shift-click with a container open
             if (this._isInContainer(slot)) { // Shift-click in a container
                 this._setSlot(slot, this._distributeItems(this._getItem(slot), ['hotbar', 'inventory']));
-                console.log(JSON.stringify(this.gameState.inventory));
                 return;
             }
 
             // Only option left is a shift-click in inventory or hotbar with a container open
             this._setSlot(slot, this._distributeItems(this._getItem(slot), ['container']));
-            console.log(JSON.stringify(this.gameState.inventory));
             return;
 
         case 2: // Number key
@@ -140,24 +127,20 @@ class InventoryHandler {
             if (this._isInContainer(slot)) { // Number key pressed while hovering a container slot
                 if (this._isEmpty(slot)) { // The container slot is empty
                     this._moveItem(numberSlot, slot);
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
                 }
 
                 if (this._isFull('inventory')) { // The inventory is full, nowhere to move the item
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
                 }
 
                 // Number key pressed while hovering a non-empty container slot, room in inventory
                 this._distributeItems(this._moveItem(slot, numberSlot), ['hotbar', 'inventory']);
-                console.log(JSON.stringify(this.gameState.inventory));
                 return;
             }
 
             // Number key pressed while hovering an inventory or hotbar slot
             this._swapSlots(slot, numberSlot);
-            console.log(JSON.stringify(this.gameState.inventory));
             return;
 
         case 3: // Middle click
@@ -176,12 +159,10 @@ class InventoryHandler {
                 switch (button) {
                 case 0: // Left click
                     this._incrementCursorItem(-1);
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
 
                 case 1: // Right click
                     this._setCursorItem(NULL_ITEM);
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
                 }
             }
@@ -189,12 +170,10 @@ class InventoryHandler {
             switch (data.button) {
             case 0: // Q
                 this._incrementSlot(slot, -1);
-                console.log(JSON.stringify(this.gameState.inventory));
                 return;
 
             case 1: // Ctrl + Q
                 this._setSlot(slot, NULL_ITEM);
-                console.log(JSON.stringify(this.gameState.inventory));
                 return;
             }
 
@@ -207,7 +186,6 @@ class InventoryHandler {
                 if (slot === -999) {
                     this.dragMode = button;
                 }
-                console.log(JSON.stringify(this.gameState.inventory));
                 return;
             }
 
@@ -215,7 +193,6 @@ class InventoryHandler {
                 if (button - 1 === this.dragState && !this.dragSlots.includes(slot)) { // Valid drag slot
                     this.dragSlots.push(slot);
                 }
-                console.log(JSON.stringify(this.gameState.inventory));
                 return;
             }
 
@@ -224,12 +201,10 @@ class InventoryHandler {
                 switch (this.dragState) {
                 case 0: // Left click drag
                     this._applyLeftDrag(cursorItem, this.dragSlots);
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
 
                 case 4: // Right click drag
                     this._applyRightDrag(cursorItem, this.dragSlots);
-                    console.log(JSON.stringify(this.gameState.inventory));
                     return;
                 }
             }
@@ -240,7 +215,6 @@ class InventoryHandler {
             this._addAction(action);
 
             this._gatherToCursor(cursorItem)
-            console.log(JSON.stringify(this.gameState.inventory));
             return;
         }
     }
@@ -300,10 +274,8 @@ class InventoryHandler {
 
         if (data.accepted) {
             // Transaction accepted, remove the action
-            console.log(`Transaction accepted for action ${data.action} in window ${data.windowId}`);
             windowActions.delete(data.action);
         } else { // Transaction rejected, rollback
-            console.log(`Transaction rejected for action ${data.action} in window ${data.windowId}`);
             if (action.fullSnapshot) {
                 if (action.windowId !== this.currentContainerId) {
                     return; // Ignore rollbacks not in the current container
@@ -320,7 +292,6 @@ class InventoryHandler {
                 }
             }
             windowActions.delete(data.action);
-            console.log(JSON.stringify(this.gameState.inventory));
         }
         if (windowActions.size === 0) {
             this.pendingActions.delete(data.windowId);
@@ -332,7 +303,6 @@ class InventoryHandler {
         for (const [windowId, actionMap] of this.pendingActions) {
             for (const [actionNumber, action] of actionMap) {
                 if (now - action.timestamp > 5000) { // 5 seconds
-                    console.log(`Pruning stale action ${actionNumber} in window ${windowId}`);
                     actionMap.delete(actionNumber);
                 }
             }
