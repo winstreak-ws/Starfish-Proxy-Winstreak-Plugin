@@ -2,6 +2,7 @@ module.exports = {
     client: {
         window_click: {
             safe: false,
+            updatesState: true,
             eventMapping: {
                 name: 'client.windowClick',
                 extractor: (data, session) => ({
@@ -17,6 +18,7 @@ module.exports = {
         },
         close_window: {
             safe: false,
+            updatesState: true,
             eventMapping: {
                 name: 'client.closeWindow',
                 extractor: (data, session) => ({
@@ -69,6 +71,7 @@ module.exports = {
         },
         open_window: {
             safe: true,
+            updatesState: true,
             eventMapping: {
                 name: 'inventory.open',
                 extractor: (data) => ({
@@ -81,6 +84,7 @@ module.exports = {
         },
         close_window: {
             safe: false,
+            updatesState: true,
             eventMapping: {
                 name: 'inventory.close',
                 extractor: (data) => ({
@@ -90,6 +94,7 @@ module.exports = {
         },
         transaction: {
             safe: false,
+            updatesState: true,
             eventMapping: {
                 name: 'inventory.transaction',
                 extractor: (data) => ({
