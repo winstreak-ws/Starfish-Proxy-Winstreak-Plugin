@@ -1,6 +1,6 @@
 module.exports = (api) => {
     api.metadata({
-        name: 'bw',
+        name: 'bedwarsutilities',
         displayName: 'Bedwars Utilities',
         prefix: '§eBW',
         version: '1.0.0',
@@ -46,12 +46,6 @@ module.exports = (api) => {
     api.configSchema(configSchema);
 
     api.commands((registry) => {
-        registry.register('who', {
-            description: 'Manually run /who command',
-            execute: () => {
-                bedwarsWho.runWhoCommand();
-            }
-        });
     });
     
     bedwarsWho.registerHandlers();
