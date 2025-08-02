@@ -3,7 +3,7 @@ module.exports = (api) => {
         name: 'bedwarsutilities',
         displayName: 'Bedwars Utilities',
         prefix: '§eBW',
-        version: '1.0.0',
+        version: '0.1.1',
         author: 'Hexze',
         description: 'Various utilities for the Bedwars gamemode',
     });
@@ -81,10 +81,10 @@ class BedwarsWho {
     }
 
     isBedwarsStartMessage(message) {
-        const cleanMessage = message.replace(/§[0-9a-fk-or]/g, '');
-        return cleanMessage.includes('Bed Wars') && 
-               cleanMessage.includes('Protect your bed and destroy the enemy beds') &&
-               cleanMessage.includes('▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬');
+        const cleanMessage = message.replace(/§[0-9a-fk-or]/g, '').trim();
+        const startText = 'Protect your bed and destroy the enemy beds.';
+
+        return cleanMessage === startText;
     }
 
     handleGameStart() {
@@ -102,7 +102,7 @@ class BedwarsWho {
     }
 
     runWhoCommand() {
-        this.api.chat('/who');
+        this.api.sendChatToServer('/who');
         this.api.debugLog('Automatically ran /who command for Bedwars game');
     }
 }

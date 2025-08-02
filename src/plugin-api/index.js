@@ -61,6 +61,7 @@ class PluginAPI {
         this.sendTitle = this.communicationModule.sendTitle.bind(this.communicationModule);
         this.sendActionBar = this.communicationModule.sendActionBar.bind(this.communicationModule);
         this.sendTabComplete = this.communicationModule.sendTabComplete.bind(this.communicationModule);
+        this.sendChatToServer = this.communicationModule.sendChatToServer.bind(this.communicationModule);
         
         // world methods
         this.sound = this.worldModule.sendSound.bind(this.worldModule);
@@ -807,6 +808,7 @@ class PluginAPI {
             sendTitle: withEnabledCheck(mainAPI.sendTitle, 'sendTitle'),
             sendActionBar: withEnabledCheck(mainAPI.sendActionBar, 'sendActionBar'),
             sendParticle: withEnabledCheck(mainAPI.sendParticle, 'sendParticle'),
+            sendChatToServer: withEnabledCheck(mainAPI.sendChatToServer, 'sendChatToServer'),
             
             // server administration methods
             kick: withEnabledCheck(mainAPI.kick, 'kick'),

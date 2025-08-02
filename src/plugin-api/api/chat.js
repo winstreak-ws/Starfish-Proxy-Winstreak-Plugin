@@ -112,6 +112,19 @@ class Chat {
             return false;
         }
     }
+    
+    sendChatToServer(message) {
+        if (!this.proxy.currentPlayer?.targetClient) return false;
+        
+        try {
+            return this.proxy.currentPlayer.targetClient.write('chat', {
+                message: message
+            });
+        } catch (error) {
+            this.core.log(`Failed to send chat to server: ${error.message}`);
+            return false;
+        }
+    }
 }
 
 module.exports = Chat;
