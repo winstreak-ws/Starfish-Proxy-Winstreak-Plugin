@@ -8,7 +8,7 @@ module.exports = (api) => {
         name: 'urchin',
         displayName: 'Urchin',
         prefix: '§5BL',
-        version: '0.1.1',
+        version: '0.1.2',
         author: 'Hexze',
         description: 'Integration with Urchin API for automatic blacklisting and client tags'
     });
@@ -40,7 +40,7 @@ module.exports = (api) => {
                 alerts: { 
                     enabled: true, 
                     audioAlerts: { enabled: true }, 
-                    alertDelay: 500 
+                    alertDelay: 0 
                 }
             },
             settings: [

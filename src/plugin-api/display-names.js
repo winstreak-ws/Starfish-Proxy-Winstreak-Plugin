@@ -6,9 +6,9 @@ class DisplayNames {
         this.customDisplayNames = new Map();
         this.originalDisplayNames = new Map();
         
-        this.events.on('player.join', (data) => this._onPlayerJoin(data));
-        this.events.on('teamUpdate', (data) => this._handleTeamUpdate(data));
         this.events.on('playerList.update', (data) => this._onPlayerListUpdate(data));
+        this.events.on('teamUpdate', (data) => this._handleTeamUpdate(data));
+        this.events.on('world.change', (data) => this._handleWorldChange(data));
     }
     
     setCustomDisplayName(uuid, displayName) {
@@ -35,7 +35,7 @@ class DisplayNames {
     updatePlayerList() {
         if (!this.proxy.currentPlayer?.client || !this.proxy.currentPlayer?.gameState) return;
         
-        for (const [uuid, customName] of this.customDisplayNames) {
+        for (const [uuid] of this.customDisplayNames) {
             this._updatePlayerDisplayName(uuid);
         }
     }
@@ -47,73 +47,58 @@ class DisplayNames {
     clearCustomDisplayName(uuid) {
         if (!this.customDisplayNames.has(uuid)) return;
         
-        const originalName = this.originalDisplayNames.get(uuid);
-        if (originalName && this.proxy.currentPlayer?.client) {
-            const playerInfo = this.proxy.currentPlayer.gameState?.playerInfo.get(uuid);
-            if (playerInfo) {
-                const team = this.proxy.currentPlayer.gameState.getPlayerTeam(playerInfo.name);
-                let formattedName = originalName;
-                
-                if (team) {
-                    formattedName = team.prefix + originalName + team.suffix;
-                }
-                
-                const displayNameJSON = JSON.stringify({ text: formattedName });
-                
-                this.proxy.currentPlayer.client.write('player_info', {
-                    action: 3,
-                    data: [{ UUID: uuid, displayName: displayNameJSON }]
-                });
-            }
-        }
+        this._restoreOriginalDisplayName(uuid);
         
         this.customDisplayNames.delete(uuid);
         this.originalDisplayNames.delete(uuid);
     }
     
-    _onPlayerJoin(data) {
-        if (this.customDisplayNames.has(data.uuid)) {
-            setTimeout(() => {
-                if (!this.proxy.currentPlayer?.gameState) return;
-                this._updatePlayerDisplayName(data.uuid);
-            }, 500);
-        }
-    }
-    
     _onPlayerListUpdate(data) {
-        // Handle action 0 (ADD_PLAYER) - when players are re-added to the list
         if (data.action === 0) {
             for (const player of data.players) {
-                const uuid = player.uuid;
-                if (this.customDisplayNames.has(uuid)) {
-                    // Use a timeout to ensure the gameState is updated first
-                    setTimeout(() => {
-                        if (!this.proxy.currentPlayer?.gameState) return;
-                        this._updatePlayerDisplayName(uuid);
-                    }, 50);
+                if (this.customDisplayNames.has(player.uuid)) {
+                    this._updatePlayerDisplayName(player.uuid);
                 }
             }
         }
     }
     
     _updatePlayerDisplayName(uuid) {
-        if (!this.proxy.currentPlayer?.client) return;
+        if (!this.proxy.currentPlayer?.client || !this.proxy.currentPlayer?.gameState) return;
         
         const customName = this.customDisplayNames.get(uuid);
         if (!customName) return;
         
-        const playerInfo = this.proxy.currentPlayer.gameState?.playerInfo.get(uuid);
+        const playerInfo = this.proxy.currentPlayer.gameState.playerInfo.get(uuid);
         if (!playerInfo) return;
         
-        const team = this.proxy.currentPlayer.gameState.getPlayerTeam(playerInfo.name);
-        let formattedName = customName;
+        const displayName = this._formatDisplayName(customName, playerInfo.name);
+        this._sendDisplayNameUpdate(uuid, displayName);
+    }
+    
+    _restoreOriginalDisplayName(uuid) {
+        if (!this.proxy.currentPlayer?.client || !this.proxy.currentPlayer?.gameState) return;
         
+        const originalName = this.originalDisplayNames.get(uuid);
+        if (!originalName) return;
+        
+        const playerInfo = this.proxy.currentPlayer.gameState.playerInfo.get(uuid);
+        if (!playerInfo) return;
+        
+        const displayName = this._formatDisplayName(originalName, playerInfo.name);
+        this._sendDisplayNameUpdate(uuid, displayName);
+    }
+    
+    _formatDisplayName(displayName, playerName) {
+        const team = this.proxy.currentPlayer.gameState.getPlayerTeam(playerName);
         if (team) {
-            formattedName = team.prefix + customName + team.suffix;
+            return team.prefix + displayName + team.suffix;
         }
-        
-        const displayNameJSON = JSON.stringify({ text: formattedName });
-        
+        return displayName;
+    }
+    
+    _sendDisplayNameUpdate(uuid, displayName) {
+        const displayNameJSON = JSON.stringify({ text: displayName });
         this.proxy.currentPlayer.client.write('player_info', {
             action: 3,
             data: [{ UUID: uuid, displayName: displayNameJSON }]
@@ -121,61 +106,65 @@ class DisplayNames {
     }
     
     _handleTeamUpdate(event) {
-        if (!this.proxy.currentPlayer?.client) return;
+        if (!this.proxy.currentPlayer?.client || !this.proxy.currentPlayer?.gameState) return;
         
-        const teamName = event.name;
-        const mode = event.mode;
-        
+        const { name: teamName, mode } = event;
         if (!teamName || mode === undefined) return;
         
-        if (mode >= 0 && mode <= 4) {
-            setTimeout(() => {
-                if (!this.proxy.currentPlayer?.gameState) return;
-                
-                if (mode === 1) {
-                    // When a team is removed, we need to update all players with custom display names
-                    // because we can't know which players were on the removed team
-                    for (const [uuid, customName] of this.customDisplayNames) {
-                        const playerInfo = this.proxy.currentPlayer.gameState.playerInfo.get(uuid);
-                        if (playerInfo) {
-                            this._updatePlayerDisplayName(uuid);
-                        }
+        setImmediate(() => {
+            if (!this.proxy.currentPlayer?.gameState) return;
+            
+            switch (mode) {
+                case 0:
+                case 2:
+                    this._updatePlayersInTeam(teamName);
+                    break;
+                case 1:
+                    this._updateAllPlayers();
+                    break;
+                case 3:
+                    if (event.players) {
+                        this._updateSpecificPlayers(event.players);
                     }
-                } else if (mode === 3 && event.players) {
-                    for (const playerName of event.players) {
-                        for (const [uuid, customName] of this.customDisplayNames) {
-                            const playerInfo = this.proxy.currentPlayer.gameState.playerInfo.get(uuid);
-                            if (playerInfo && playerInfo.name === playerName) {
-                                this._updatePlayerDisplayName(uuid);
-                                break;
-                            }
-                        }
-                    }
-                } else if (mode === 0 || mode === 2) {
-                    const team = this.proxy.currentPlayer.gameState.teams.get(teamName);
-                    if (!team) return;
-                    
-                    for (const [uuid, customName] of this.customDisplayNames) {
-                        const playerInfo = this.proxy.currentPlayer.gameState.playerInfo.get(uuid);
-                        if (playerInfo && team.players.has(playerInfo.name)) {
-                            this._updatePlayerDisplayName(uuid);
-                        }
-                    }
-                }
-            }, 50);
+                    break;
+            }
+        });
+    }
+    
+    _updatePlayersInTeam(teamName) {
+        const team = this.proxy.currentPlayer.gameState.teams.get(teamName);
+        if (!team) return;
+        
+        for (const [uuid] of this.customDisplayNames) {
+            const playerInfo = this.proxy.currentPlayer.gameState.playerInfo.get(uuid);
+            if (playerInfo && team.players.has(playerInfo.name)) {
+                this._updatePlayerDisplayName(uuid);
+            }
+        }
+    }
+    
+    _updateAllPlayers() {
+        for (const [uuid] of this.customDisplayNames) {
+            this._updatePlayerDisplayName(uuid);
+        }
+    }
+    
+    _updateSpecificPlayers(playerNames) {
+        const namesToUpdate = new Set(playerNames);
+        
+        for (const [uuid] of this.customDisplayNames) {
+            const playerInfo = this.proxy.currentPlayer.gameState.playerInfo.get(uuid);
+            if (playerInfo && namesToUpdate.has(playerInfo.name)) {
+                this._updatePlayerDisplayName(uuid);
+            }
         }
     }
     
     _clearCustomDisplayNames() {
         if (!this.proxy.currentPlayer?.client) return;
         
-        for (const [uuid, originalName] of this.originalDisplayNames) {
-            const displayNameJSON = JSON.stringify({ text: originalName });
-            
-            this.proxy.currentPlayer.client.write('player_info', {
-                action: 3,
-                data: [{ UUID: uuid, displayName: displayNameJSON }]
-            });
+        for (const [uuid] of this.originalDisplayNames) {
+            this._restoreOriginalDisplayName(uuid);
         }
         
         this.customDisplayNames.clear();
@@ -188,13 +177,33 @@ class DisplayNames {
         this._clearCustomDisplayNames();
         
         if (namesToRestore.size > 0) {
-            setTimeout(() => {
-                if (!this.proxy.currentPlayer?.gameState) return;
-                
-                for (const [uuid, name] of namesToRestore) {
-                    this.setCustomDisplayName(uuid, name);
+            const restoreHandler = (data) => {
+                if (data.action === 0) {
+                    for (const player of data.players) {
+                        if (namesToRestore.has(player.uuid)) {
+                            this.setCustomDisplayName(player.uuid, namesToRestore.get(player.uuid));
+                            namesToRestore.delete(player.uuid);
+                            
+                            if (namesToRestore.size === 0) {
+                                this.events.off('playerList.update', restoreHandler);
+                            }
+                        }
+                    }
                 }
-            }, 1000);
+            };
+            
+            this.events.on('playerList.update', restoreHandler);
+            
+            for (const [uuid, name] of namesToRestore) {
+                if (this.proxy.currentPlayer?.gameState?.playerInfo.has(uuid)) {
+                    this.setCustomDisplayName(uuid, name);
+                    namesToRestore.delete(uuid);
+                }
+            }
+            
+            if (namesToRestore.size === 0) {
+                this.events.off('playerList.update', restoreHandler);
+            }
         }
     }
 }

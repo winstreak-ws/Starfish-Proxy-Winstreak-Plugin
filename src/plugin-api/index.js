@@ -67,7 +67,7 @@ class PluginAPI {
         this.sound = this.worldModule.sendSound.bind(this.worldModule);
         this.sendParticle = this.worldModule.sendParticle.bind(this.worldModule);
         
-        // misc methods (server administration, scoreboard)
+        // misc methods
         this.kick = this.miscModule.kick.bind(this.miscModule);
         this.sendKeepAlive = this.miscModule.sendKeepAlive.bind(this.miscModule);
         this.sendCustomPayload = this.miscModule.sendCustomPayload.bind(this.miscModule);
@@ -134,7 +134,7 @@ class PluginAPI {
         this.collectEntity = this.entitiesModule.collect.bind(this.entitiesModule);
         this.attachEntity = this.entitiesModule.attach.bind(this.entitiesModule);
         
-        // world methods (query and world packets)
+        // world methods
         this.getTeams = this.worldModule.getTeams.bind(this.worldModule);
         this.getPlayerTeam = this.worldModule.getPlayerTeam.bind(this.worldModule);
         this.sendExplosion = this.worldModule.sendExplosion.bind(this.worldModule);
@@ -145,7 +145,7 @@ class PluginAPI {
         this.sendSpawnPosition = this.worldModule.sendSpawnPosition.bind(this.worldModule);
         this.sendGameStateChange = this.worldModule.sendGameStateChange.bind(this.worldModule);
         
-        // misc methods (scoreboard)
+        // scoreboardmethods
         this.sendScoreboardObjective = this.miscModule.sendScoreboardObjective.bind(this.miscModule);
         this.sendScoreboardScore = this.miscModule.sendScoreboardScore.bind(this.miscModule);
         this.sendScoreboardDisplay = this.miscModule.sendScoreboardDisplay.bind(this.miscModule);

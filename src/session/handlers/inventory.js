@@ -9,7 +9,7 @@ class InventoryHandler {
         this.containerSizes = new Map(
             [[0, 0]]
         );
-        this.pendingActions = new Map(); // Map<windowId, Map<actionNumber, Action>>
+        this.pendingActions = new Map();
         this.currentContainerId = 0;
         this.currentContainer = null;
         this.dragState = -1;
@@ -26,7 +26,7 @@ class InventoryHandler {
 
     handleWindowClick(data) {
         if (data.windowId !== this.currentContainerId) {
-            return; // Ignore clicks not in the current container
+            return;
         }
         const windowId = data.windowId;
         const actionNumber = data.action;
@@ -302,7 +302,7 @@ class InventoryHandler {
         const now = Date.now();
         for (const [windowId, actionMap] of this.pendingActions) {
             for (const [actionNumber, action] of actionMap) {
-                if (now - action.timestamp > 5000) { // 5 seconds
+                if (now - action.timestamp > 5000) {
                     actionMap.delete(actionNumber);
                 }
             }
@@ -316,7 +316,7 @@ class InventoryHandler {
         return {
             windowId: windowId,
             actionNumber: actionNumber,
-            timestamp: Date.now(), // Timestamp so stale actions can be pruned
+            timestamp: Date.now(),
             rollbackData: rollbackData,
             fullSnapshot: fullSnapshot,
         };
@@ -336,7 +336,6 @@ class InventoryHandler {
         };
     }
 
-    // Helper methods for window_click packet handling
     _setSlot(slot, item) {
         const safeItem = (item && item.itemCount <= 0) ? NULL_ITEM : lodash.cloneDeep(item);
         if (this.currentContainerId === 0) {

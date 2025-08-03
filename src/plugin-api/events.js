@@ -83,7 +83,6 @@ class Events extends EventEmitter {
         }
         this.eventHandlers.get(event).add(handler);
         
-        // Return unsubscribe function
         return () => {
             const handlers = this.eventHandlers.get(event);
             if (handlers) {
@@ -100,7 +99,6 @@ class Events extends EventEmitter {
             throw new Error('everyTick callback must be a function');
         }
         
-        // Create an interval that runs every 50ms (20 TPS)
         const interval = setInterval(() => {
             if (!this.core.enabled) {
                 clearInterval(interval);
@@ -117,7 +115,6 @@ class Events extends EventEmitter {
             }
         }, 50);
         
-        // Return cleanup function
         return () => {
             clearInterval(interval);
         };

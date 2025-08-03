@@ -6,7 +6,7 @@ module.exports = (api) => {
         name: 'anticheat',
         displayName: 'Anticheat',
         prefix: '§cAC',
-        version: '0.1.1',
+        version: '0.1.2',
         author: 'Hexze',
         description: 'Advanced cheater detector system (Inspired by github.com/PugrillaDev)',
         dependencies: []
@@ -251,7 +251,7 @@ const CHECKS = {
     
     ScaffoldA: {
         config: { 
-            enabled: true, sound: true, vl: 15, cooldown: 2000, 
+            enabled: false, sound: true, vl: 15, cooldown: 2000, 
             description: "Detects fast flat scaffold with no vertical movement" 
         },
 

@@ -6,7 +6,7 @@ module.exports = (api) => {
         name: 'denicker',
         displayName: 'Denicker',
         prefix: '§cDN',
-        version: '0.1.4',
+        version: '0.1.5',
         author: 'Hexze',
         description: 'Detects and resolves nicked players (Inspired by github.com/PugrillaDev)',
     });
@@ -117,12 +117,14 @@ class Denicker {
         this.api = api;
         this.PLUGIN_PREFIX = this.api.getPrefix();
         this.parsed = new Set();
-        this.noPrefixTicks = new Map();
         this.nickDisplayNames = new Map();
+        this.pendingChecks = new Map();
+        this.teamDataReceived = new Set();
     }
 
     registerHandlers() {
-        this.api.on('tick', this.onTick.bind(this));
+        this.api.on('playerList.update', this.onPlayerListUpdate.bind(this));
+        this.api.on('teamUpdate', this.onTeamUpdate.bind(this));
         this.api.on('world.change', this.onWorldChange.bind(this));
         this.api.on('plugin.restored', this.onPluginRestored.bind(this));
     }
@@ -135,47 +137,64 @@ class Denicker {
     onPluginRestored(event) {
         if (event.pluginName === 'denicker') {
             this.parsed.clear();
-            this.noPrefixTicks.clear();
+            this.pendingChecks.clear();
+            this.teamDataReceived.clear();
         }
     }
 
     reset() {
         this.parsed.clear();
-        this.noPrefixTicks.clear();
+        this.pendingChecks.clear();
+        this.teamDataReceived.clear();
         this.nickDisplayNames.clear();
     }
 
-    onTick() {
-        for (const player of this.api.players) {
-            if (!player.name || typeof player.name !== 'string' || player.uuid.charAt(14) !== '1') continue;
-
-            if (this.parsed.has(player.uuid)) continue;
-
-            const ticks = (this.noPrefixTicks.get(player.uuid) || 0) + 1;
-            this.noPrefixTicks.set(player.uuid, ticks);
+    onPlayerListUpdate(event) {
+        if (event.action !== 0) return;
+        
+        for (const playerData of event.players) {
+            if (!playerData.name || typeof playerData.name !== 'string' || playerData.uuid.charAt(14) !== '1') continue;
+            
+            if (this.parsed.has(playerData.uuid)) continue;
+            
+            const player = {
+                uuid: playerData.uuid,
+                name: playerData.name,
+                properties: playerData.properties
+            };
             
             const team = this.api.getPlayerTeam(player.name);
-            
-            const hasTeamData = team !== null;
-            const maxWaitReached = ticks >= 60;
-            
-            if (!hasTeamData && !maxWaitReached) {
-                continue;
+            if (team !== null) {
+                this.teamDataReceived.add(player.name);
+                this.parseSkinData(player, team);
+                this.parsed.add(player.uuid);
+            } else {
+                this.pendingChecks.set(player.name, player);
             }
-
-            this.parseSkinData(player, team);
-            this.parsed.add(player.uuid);
-            this.noPrefixTicks.delete(player.uuid);
+        }
+    }
+    
+    onTeamUpdate(event) {
+        if (event.mode === 0 || event.mode === 2 || event.mode === 3) {
+            for (const [playerName, player] of this.pendingChecks) {
+                const team = this.api.getPlayerTeam(playerName);
+                if (team !== null) {
+                    this.teamDataReceived.add(playerName);
+                    this.parseSkinData(player, team);
+                    this.parsed.add(player.uuid);
+                    this.pendingChecks.delete(playerName);
+                }
+            }
         }
     }
 
     parseSkinData(player, team) {
-        const { uuid, name } = player;
+        const { uuid, name, properties } = player;
         
-        const playerInfo = this.api.getPlayerInfo(uuid);
-        if (!playerInfo) return;
+        const playerProperties = properties || this.api.getPlayerInfo(uuid)?.properties;
+        if (!playerProperties) return;
         
-        const textureProp = playerInfo.properties?.find(p => p.name === 'textures');
+        const textureProp = playerProperties.find(p => p.name === 'textures');
         if (!textureProp?.value) return;
 
         try {
@@ -214,7 +233,7 @@ class Denicker {
         this.nickDisplayNames.set(uuid, { nickName, realName });
         
         if (this.api.config.get('modifyDisplayNames.enabled')) {
-            const nickSuffix = realName ? ` §7(${realName})` : ` §c[NICK]`;
+            const nickSuffix = realName ? ` §c(${realName})` : ` §c[NICK]`;
             const baseDisplayName = nickName + nickSuffix;
             this.api.setCustomDisplayName(uuid, baseDisplayName);
         }
@@ -233,7 +252,9 @@ class Denicker {
             return;
         }
         
-        setTimeout(() => {
+        const alertDelay = this.api.config.get('alerts.alertDelay');
+        
+        const sendMessage = () => {
             const alertMsg = realName
                 ? `§6${realName}§7 is nicked as ${playerName}§7.`
                 : `${playerName}§7 is nicked.`;
@@ -242,7 +263,13 @@ class Denicker {
             if (this.api.config.get('alerts.audioAlerts.enabled')) {
                 this.api.sound('note.pling');
             }
-        }, this.api.config.get('alerts.alertDelay'));
+        };
+        
+        if (alertDelay > 0) {
+            setTimeout(sendMessage, alertDelay);
+        } else {
+            sendMessage();
+        }
     }
 
     sendCubelifyMessage(realName) {

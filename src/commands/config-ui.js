@@ -14,7 +14,6 @@ function createAutoConfig({ commandHandler, moduleName, options, client }) {
     }
     
     const pluginWrapper = pluginAPI.createPluginWrapper(loadedPlugin.metadata);
-    // Try to get config from the actual plugin instance first
     const pluginInstance = loadedPlugin.instance;
     const configObject = pluginInstance?.api?.config?.getAll() || pluginWrapper.getConfig();
     

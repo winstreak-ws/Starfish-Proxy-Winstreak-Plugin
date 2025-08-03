@@ -41,7 +41,7 @@ module.exports = {
                         };
                         
                         switch(data.action) {
-                            case 0: // add player
+                            case 0:
                                 update = {
                                     ...update,
                                     name: player.name,
@@ -50,16 +50,16 @@ module.exports = {
                                     ping: player.ping
                                 };
                                 break;
-                            case 1: // update gamemode
+                            case 1:
                                 update.gamemode = player.gamemode;
                                 break;
-                            case 2: // update latency
+                            case 2:
                                 update.ping = player.ping;
                                 break;
-                            case 3: // update display name
+                            case 3:
                                 update.displayName = player.displayName;
                                 break;
-                            case 4: // remove player
+                            case 4:
                                 break;
                         }
                         

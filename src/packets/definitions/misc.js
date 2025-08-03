@@ -53,15 +53,15 @@ module.exports = {
                 name: 'combat',
                 extractor: (data) => {
                     switch(data.event) {
-                        case 0: // enter combat
+                        case 0:
                             return { event: 'enter' };
-                        case 1: // end combat
+                        case 1:
                             return {
                                 event: 'end',
                                 duration: data.duration,
                                 entityId: data.entityId
                             };
-                        case 2: // entity dead
+                        case 2:
                             return {
                                 event: 'death',
                                 playerId: data.playerId,

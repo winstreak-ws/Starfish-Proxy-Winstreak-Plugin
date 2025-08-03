@@ -10,7 +10,6 @@ class Players {
         const gameState = this.proxy.currentPlayer.gameState;
         const players = [];
         
-        // add the current player
         if (gameState.loginPacket) {
             players.push({
                 uuid: this.proxy.currentPlayer.uuid,
@@ -37,7 +36,6 @@ class Players {
         
         const entitiesWithinRender = new Set();
         
-        // add players within render distance
         for (const [entityId, entity] of gameState.entities) {
             if (entity.type === 'player' && entity.uuid) {
                 const playerInfo = gameState.playerInfo.get(entity.uuid);
@@ -68,7 +66,6 @@ class Players {
             }
         }
         
-        // add players from tab list that are not within render distance
         for (const [uuid, playerInfo] of gameState.playerInfo) {
             if (entitiesWithinRender.has(uuid) || uuid === this.proxy.currentPlayer?.uuid) {
                 continue;

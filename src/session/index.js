@@ -10,7 +10,6 @@ class PlayerSession {
         this.client = client;
         this.targetClient = null;
         
-        // Initialize packet system if not already done
         if (!proxy.packetSystem) {
             proxy.packetSystem = new PacketSystem();
             proxy.packetSystem.initialize();
@@ -198,7 +197,6 @@ class PlayerSession {
         this.client.removeAllListeners('packet');
         this.targetClient.removeAllListeners('packet');
 
-        // Use the new packet processor for all packet handling
         this.client.on('packet', (data, meta) => {
             this.packetProcessor.processPacket(this, 'client', data, meta);
         });

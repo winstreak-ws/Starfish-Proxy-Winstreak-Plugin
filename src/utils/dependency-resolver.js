@@ -69,7 +69,6 @@ class DependencyResolver {
                     continue;
                 }
                 
-                // SECURITY RULE: Official plugins cannot depend on unofficial ones
                 if (plugin.official && !depPlugin.official) {
                     errors.push(`Official plugin "${pluginName}" cannot depend on unofficial plugin "${dep.name}"`);
                     continue;
@@ -84,7 +83,6 @@ class DependencyResolver {
             for (const dep of node.optionalDependencies) {
                 const depPlugin = this.plugins.get(dep.name);
                 if (depPlugin) {
-                    // SECURITY RULE: Official plugins cannot have optional dependencies on unofficial ones
                     if (plugin.official && !depPlugin.official) {
                         errors.push(`Official plugin "${pluginName}" cannot have optional dependency on unofficial plugin "${dep.name}"`);
                         continue;
@@ -211,7 +209,6 @@ class DependencyResolver {
             loadOrder.push(pluginName);
         };
         
-        // Load official plugins first, then unofficial plugins
         const officialPlugins = [];
         const unofficialPlugins = [];
         
@@ -223,12 +220,10 @@ class DependencyResolver {
             }
         }
         
-        // Process official plugins first
         for (const pluginName of officialPlugins) {
             visit(pluginName);
         }
         
-        // Then process unofficial plugins
         for (const pluginName of unofficialPlugins) {
             visit(pluginName);
         }

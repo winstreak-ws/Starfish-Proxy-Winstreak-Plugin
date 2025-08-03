@@ -4,7 +4,6 @@ class Misc {
         this.core = core;
     }
     
-    // Server administration methods
     kick(reason = 'Disconnected') {
         if (!this.core.isHypixelSafe('kick')) {
             this.core.logHypixelBlock('kick');
@@ -72,7 +71,6 @@ class Misc {
         }
     }
     
-    // Scoreboard methods
     sendScoreboardObjective(objectiveName, mode, objectiveValue = '', type = 'integer') {
         if (!this.proxy.currentPlayer?.client) return false;
         

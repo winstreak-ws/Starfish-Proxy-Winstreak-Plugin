@@ -113,7 +113,6 @@ class CommandHandler {
 
                     const parsedArgs = {};
                     commandMetadata.arguments.forEach((argMeta, i) => {
-                        // Strip brackets from argument name for cleaner access
                         const cleanName = argMeta.name.replace(/^[<\[]/, '').replace(/[>\]]$/, '').replace(/\.\.\.$/, '');
                         parsedArgs[cleanName] = rawArgs[i];
                     });
@@ -233,24 +232,20 @@ class CommandHandler {
                 break;
                 
             default:
-                // For any other errors, provide a more helpful generic message
                 this.proxy.sendMessage(client, `${THEME.error}Invalid command usage`);
                 this.proxy.sendMessage(client, `${THEME.info}Use '/${moduleName} help${commandName ? ` ${commandName}` : ''}' for help`);
                 
-                // Still log the error for debugging, but don't overwhelm the user
                 console.error('Command error:', error.message);
                 break;
         }
     }
     
     _extractMissingArgument(message) {
-        // Extract argument name from messages like "error: missing required argument 'username'"
         const match = message.match(/missing required argument ['"]?([^'"]+)['"]?/i);
         return match ? match[1] : null;
     }
     
     _extractOptionName(message) {
-        // Extract option name from messages like "error: unknown option '--invalid'"
         const match = message.match(/option ['"]?([^'"]+)['"]?/i);
         return match ? match[1] : null;
     }
