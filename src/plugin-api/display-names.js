@@ -8,6 +8,7 @@ class DisplayNames {
         
         this.events.on('player.join', (data) => this._onPlayerJoin(data));
         this.events.on('teamUpdate', (data) => this._handleTeamUpdate(data));
+        this.events.on('playerList.update', (data) => this._onPlayerListUpdate(data));
     }
     
     setCustomDisplayName(uuid, displayName) {
@@ -79,6 +80,22 @@ class DisplayNames {
         }
     }
     
+    _onPlayerListUpdate(data) {
+        // Handle action 0 (ADD_PLAYER) - when players are re-added to the list
+        if (data.action === 0) {
+            for (const player of data.players) {
+                const uuid = player.uuid;
+                if (this.customDisplayNames.has(uuid)) {
+                    // Use a timeout to ensure the gameState is updated first
+                    setTimeout(() => {
+                        if (!this.proxy.currentPlayer?.gameState) return;
+                        this._updatePlayerDisplayName(uuid);
+                    }, 50);
+                }
+            }
+        }
+    }
+    
     _updatePlayerDisplayName(uuid) {
         if (!this.proxy.currentPlayer?.client) return;
         
@@ -109,7 +126,6 @@ class DisplayNames {
         const teamName = event.name;
         const mode = event.mode;
         
-        
         if (!teamName || mode === undefined) return;
         
         if (mode >= 0 && mode <= 4) {
@@ -117,13 +133,12 @@ class DisplayNames {
                 if (!this.proxy.currentPlayer?.gameState) return;
                 
                 if (mode === 1) {
-                    const team = this.proxy.currentPlayer.gameState.teams.get(teamName);
-                    if (team) {
-                        for (const [uuid, customName] of this.customDisplayNames) {
-                            const playerInfo = this.proxy.currentPlayer.gameState.playerInfo.get(uuid);
-                            if (playerInfo && team.players.has(playerInfo.name)) {
-                                this._updatePlayerDisplayName(uuid);
-                            }
+                    // When a team is removed, we need to update all players with custom display names
+                    // because we can't know which players were on the removed team
+                    for (const [uuid, customName] of this.customDisplayNames) {
+                        const playerInfo = this.proxy.currentPlayer.gameState.playerInfo.get(uuid);
+                        if (playerInfo) {
+                            this._updatePlayerDisplayName(uuid);
                         }
                     }
                 } else if (mode === 3 && event.players) {
