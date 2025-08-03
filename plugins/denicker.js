@@ -1,4 +1,3 @@
-/* STARFISH_SIGNATURE: NAZmulSLOiOWxpxMZKm8aL2dp5DKtOs+LjWjPIFsRxsbp4lDV7IxJvsWaFjN7gjxSwr8o7G99JB+KYq4+zlwmkgNBUXnlAxVfhjWDJdK4r07aD56jwivs0V1fVy7t2lHDL0mqB2KY0+wAjnAy0vBZDQYt1T+wvajE+DHC2fEPaz2Kx//DGrJM2/9lnJST64+4jv9I5t5TEvishaGatIo1BSf0+eDWWezgkPliVnLH7Jadb9zOE5AH0XSSzo3rKU0nE5mHVn35yt5Hqgkw2R3QoxGXXUlM3t8Z1cwLxeIKqo53//Cm+IWA4gyv6oiBS1rg0Tl2g0ihPIbqTmwe3MVTg== */
 // Automatic Denicker
 // Adapted from Pug's Denicker Raven script (github.com/PugrillaDev)
 
