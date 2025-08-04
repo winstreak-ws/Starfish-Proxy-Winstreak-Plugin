@@ -1,7 +1,7 @@
 const mcData = require('minecraft-data')('1.8');
 const lodash = require('lodash');
 
-const NULL_ITEM = { blockId: -1 };
+const NULL_ITEM = Object.freeze({ blockId: -1 });
 
 class InventoryHandler {
     constructor(gameState) {
@@ -28,13 +28,19 @@ class InventoryHandler {
         if (data.windowId !== this.currentContainerId) {
             return;
         }
+
+        if (data.slot === -1) {
+            return; // invalid packet, only sent when client is out of sync with itself, can be safely ignored
+        }
+
         const windowId = data.windowId;
         const actionNumber = data.action;
         const slot = data.slot;
         const item = data.item;
-        const cursorItem = this.gameState.inventory.cursorItem
+        const cursorItem = lodash.cloneDeep(this.gameState.inventory.cursorItem);
         const button = data.mouseButton;
         let action;
+
         switch (data.mode) {
         case 0: // Normal click
             switch (data.mouseButton) {
@@ -182,9 +188,9 @@ class InventoryHandler {
             action = this._createAction(windowId, actionNumber, null, this._getFullSnapshot());
             this._addAction(action);
 
-            if (this.dragMode === -1) { // Not currently dragging, start drag
+            if (this.dragState === -1) { // Not currently dragging, start drag
                 if (slot === -999) {
-                    this.dragMode = button;
+                    this.dragState = button;
                 }
                 return;
             }
@@ -214,7 +220,7 @@ class InventoryHandler {
             action = this._createAction(windowId, actionNumber, null, this._getFullSnapshot());
             this._addAction(action);
 
-            this._gatherToCursor(cursorItem)
+            this._gatherToCursor(cursorItem, slot);
             return;
         }
     }
@@ -250,7 +256,7 @@ class InventoryHandler {
         } else {
             const inventoryData = data.items.slice(-36);
             for (let i = 0; i < 36; i++) {
-                this.gameState.inventory.slots[i + 9] = inventoryData[i] || NULL_ITEM;
+                this.gameState.inventory.slots[i + 9] = inventoryData[i] || lodash.cloneDeep(NULL_ITEM);
             }
             if (data.windowId !== this.currentContainerId) {
                 return; // Ignore items not in the current container
@@ -261,7 +267,7 @@ class InventoryHandler {
 
     handleOpenWindow(data) {
         this.currentContainerId = data.windowId;
-        this.currentContainer = new Array(data.slotCount).fill(NULL_ITEM);
+        this.currentContainer = new Array(data.slotCount).fill(lodash.cloneDeep(NULL_ITEM));
         this.containerSizes.set(data.windowId, data.slotCount);
     }
 
@@ -337,7 +343,7 @@ class InventoryHandler {
     }
 
     _setSlot(slot, item) {
-        const safeItem = (item && item.itemCount <= 0) ? NULL_ITEM : lodash.cloneDeep(item);
+        const safeItem = (item && item.itemCount <= 0) ? lodash.cloneDeep(NULL_ITEM) : lodash.cloneDeep(item);
         if (this.currentContainerId === 0) {
             this.gameState.inventory.slots[slot] = safeItem;
         } else if (slot < this.containerSizes.get(this.currentContainerId)) {
@@ -367,7 +373,7 @@ class InventoryHandler {
     }
 
     _setCursorItem(item) {
-        this.gameState.inventory.cursorItem = (item && item.itemCount <= 0) ? NULL_ITEM : lodash.cloneDeep(item);
+        this.gameState.inventory.cursorItem = (item && item.itemCount <= 0) ? lodash.cloneDeep(NULL_ITEM) : lodash.cloneDeep(item);
     }
 
     _swapWithCursor(slot) {
@@ -389,7 +395,7 @@ class InventoryHandler {
         }
         this.gameState.inventory.cursorItem.itemCount += int;
         if (this.gameState.inventory.cursorItem.itemCount <= 0) {
-            this.gameState.inventory.cursorItem = NULL_ITEM;
+            this._setCursorItem(NULL_ITEM);
         }
     }
 
@@ -450,10 +456,10 @@ class InventoryHandler {
 
     _fillSlotFromCursor(slot) {
         let count = this.gameState.inventory.cursorItem.itemCount + this._getItem(slot).itemCount;
-        const maxStackSize = mcData.items[this._getItem(slot).blockId].stackSize;
+        const maxStackSize = this._getStackSize(this._getItem(slot).blockId);
         if (count > maxStackSize) {
             this._setSlotCount(slot, maxStackSize);
-            this._incrementCursorItem(count - maxStackSize);
+            this._setCursorItem({...lodash.omit(this.gameState.inventory.cursorItem, 'itemCount'), itemCount: count - maxStackSize});
         } else {
             this._setSlotCount(slot, count);
             this._setCursorItem(NULL_ITEM);
@@ -479,7 +485,7 @@ class InventoryHandler {
             this._incrementCursorItem(-1);
             return;
         }
-        const maxStackSize = mcData.items[this._getItem(slot).blockId].stackSize;
+        const maxStackSize = this._getStackSize(this._getItem(slot).blockId);
         if (this._getItem(slot).itemCount >= maxStackSize) {
             return;
         }
@@ -491,7 +497,7 @@ class InventoryHandler {
         if (this._isEmpty(item)) {
             return NULL_ITEM;
         }
-        const maxStackSize = mcData.items[item.blockId].stackSize;
+        const maxStackSize = this._getStackSize(item.blockId);
         let remainingCount = item.itemCount;
         for (const location of locations) {
             if (remainingCount <= 0) {
@@ -595,7 +601,7 @@ class InventoryHandler {
         }
         if (this._areSameItem(this._getItem(slot1), this._getItem(slot2))) {
             const sum = this._getItem(slot1).itemCount + this._getItem(slot2).itemCount;
-            const maxStackSize = mcData.items[this._getItem(slot1).blockId].stackSize;
+            const maxStackSize = this._getStackSize(this._getItem(slot1).blockId);
             if (sum <= maxStackSize) {
                 this._setSlot(slot2, {...lodash.omit(this._getItem(slot1), 'itemCount'), itemCount: sum});
                 this._setSlot(slot1, NULL_ITEM);
@@ -647,7 +653,7 @@ class InventoryHandler {
 
     _applyLeftDrag(cursorItem, dragSlots) {
         let count = cursorItem.itemCount;
-        const maxStackSize = mcData.items[cursorItem.blockId].stackSize;
+        const maxStackSize = this._getStackSize(cursorItem.blockId);
         const maxItemsPerSlot = Math.floor(count / dragSlots.length);
         for (const dragSlot of dragSlots) {
             if (count <= 0) break;
@@ -666,11 +672,13 @@ class InventoryHandler {
         } else {
             this._setCursorItem({...lodash.omit(cursorItem, 'itemCount'), itemCount: count});
         }
+        this.dragSlots = new Array();
+        this.dragState = -1;
     }
 
     _applyRightDrag(cursorItem, dragSlots) {
         let count = cursorItem.itemCount;
-        const maxStackSize = mcData.items[cursorItem.blockId].stackSize;
+        const maxStackSize = this._getStackSize(cursorItem.blockId);
         for (const dragSlot of dragSlots) {
             if (count <= 0) break;
             if (this._isEmpty(this._getItem(dragSlot))) {
@@ -687,14 +695,26 @@ class InventoryHandler {
             this._setCursorItem({...lodash.omit(cursorItem, 'itemCount'), itemCount: count});
         }
         this.dragSlots = new Array();
+        this.dragState = -1;
     }
 
-    _gatherToCursor(cursorItem) {
+    _gatherToCursor(cursorItem, slot) {
+        if (this._isEmpty(cursorItem) && this._isEmpty(this._getItem(slot))) {
+            return;
+        }
+
         const inventorySlots = [
             ...Array.from({ length: 4 }, (_, i) => i + 1), // Crafting grid slots (1-4)
             ...Array.from({ length: 36 }, (_, i) => i + 9) // Inventory slots (9-44)
         ];
-        const maxStackSize = mcData.items[cursorItem.blockId].stackSize;
+
+        if (this._isEmpty(cursorItem)) {
+            this._setCursorItem(this._getItem(slot));
+            this._setSlot(slot, NULL_ITEM);
+            cursorItem = this.gameState.inventory.cursorItem;
+        }
+
+        const maxStackSize = this._getStackSize(cursorItem.blockId);
         let count = cursorItem.itemCount;
         if (this.currentContainerId !== 0) {
             for (let i = 0; i < this.containerSizes.get(this.currentContainerId); i++) { // First pass through container, only snag partial slots
@@ -720,7 +740,7 @@ class InventoryHandler {
                 count += toAdd;
                 this.gameState.inventory.slots[i].itemCount -= toAdd;
                 if (this.gameState.inventory.slots[i].itemCount <= 0) {
-                    this.gameState.inventory.slots[i] = NULL_ITEM;
+                    this.gameState.inventory.slots[i] = lodash.cloneDeep(NULL_ITEM);
                 }
             }
         }
@@ -749,12 +769,20 @@ class InventoryHandler {
                 count += toAdd;
                 this.gameState.inventory.slots[i].itemCount -= toAdd;
                 if (this.gameState.inventory.slots[i].itemCount <= 0) {
-                    this.gameState.inventory.slots[i] = NULL_ITEM;
+                    this.gameState.inventory.slots[i] = lodash.cloneDeep(NULL_ITEM);
                 }
             }
         }
 
         this._setCursorItem({...lodash.omit(cursorItem, 'itemCount'), itemCount: count});
+    }
+
+    _getStackSize(itemId) {
+        const stackSize = mcData.items[itemId]?.stackSize;
+        if (stackSize === undefined) {
+            return null;
+        }
+        return stackSize;
     }
 }
 
