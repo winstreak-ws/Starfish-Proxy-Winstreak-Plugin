@@ -6,10 +6,9 @@ module.exports = (api) => {
         name: 'anticheat',
         displayName: 'Anticheat',
         prefix: '§cAC',
-        version: '0.1.2',
+        version: '0.1.3',
         author: 'Hexze',
         description: 'Advanced cheater detector system (Inspired by github.com/PugrillaDev)',
-        dependencies: []
     });
 
     const anticheat = new AnticheatSystem(api);

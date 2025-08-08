@@ -7,7 +7,10 @@ const PluginAPI = require('./plugin-api');
 const { Storage } = require('./storage');
 const { getBaseDir } = require('./utils/paths');
 
-const PROXY_VERSION = '1.8.9';
+const packageJson = require('../package.json');
+const STARFISH_VERSION = packageJson.version;
+
+const MINECRAFT_VERSION = '1.8.9';
 const PROXY_PORT = 25565;
 const PROXY_PREFIX = '§6S§eta§fr§bfi§3sh§r';
 
@@ -30,6 +33,10 @@ class MinecraftProxy {
         return getBaseDir();
     }
 
+    getStarfishVersion() {
+        return STARFISH_VERSION;
+    }
+
     async initializeProxy() {
         this.registerProxyCommands();
         await this.pluginAPI.loadPlugins();
@@ -39,14 +46,14 @@ class MinecraftProxy {
     createServer() {
         this.server = mc.createServer({
             'online-mode': true,
-            version: PROXY_VERSION,
+            version: MINECRAFT_VERSION,
             port: this.config.proxyPort || PROXY_PORT,
             keepAlive: false,
             motd: this.generateMOTD(),
             maxPlayers: 1,
             beforeLogin: (client) => {
                 if (client.protocolVersion !== 47) {
-                    client.end(`§cPlease connect using ${PROXY_VERSION}`);
+                    client.end(`§cPlease connect using ${MINECRAFT_VERSION}`);
                 }
             }
         });
@@ -316,7 +323,7 @@ class MinecraftProxy {
     generateMOTD() {
         const pluginCount = this.pluginAPI.getLoadedPlugins().length;
         const pluginText = pluginCount > 0 ? `${pluginCount} Plugin${pluginCount > 1 ? 's' : ''}` : 'No Plugins';
-        return `${PROXY_PREFIX} §5Proxy§r §8| ${pluginText}\n§7Target: §e${this.getTargetDisplay()}`;
+        return `${PROXY_PREFIX} §5Proxy §7v${STARFISH_VERSION}§r §8| ${pluginText}\n§7Target: §e${this.getTargetDisplay()}`;
     }
 
     getTargetDisplay() {

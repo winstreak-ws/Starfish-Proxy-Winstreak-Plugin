@@ -1,3 +1,4 @@
+/* STARFISH_SIGNATURE: AJpG/Vi6ynUJ4gmSNhb4inwKaWTeo5XVnAEVxw97yQb7F6zYLmU6iTggdraV8bgamSKhuBowWn+14mEWdwt3GwXGRgn435sxRDTCDMbZeV1DEXe7ZH0JTjoYarKmF3QnU+aiszLlFHNYSOXjl8A+NJExjde+UjCGBBhsZ6PQeU12wnbv8cuJtIWepyNG5tM8lms52nDlHzBLwH5Oc0DiNDh7HOITN4RPkOp4FupCfavpcu4IZ0Y1i9P9G84LvZe1hHw0A63bpPuwZ2DV0vUXEYvfafEF8PpJwO9bpmvWfASyU7gmYwzW02/n0fyShI3h9QIJOeIN0e5LeuhnfGmyhQ== */
 // Urchin Integration Plugin
 // Provides automatic tag checking, blacklisting, and client tag display
 
@@ -8,7 +9,7 @@ module.exports = (api) => {
         name: 'urchin',
         displayName: 'Urchin',
         prefix: '§5BL',
-        version: '0.1.2',
+        version: '0.1.3',
         author: 'Hexze',
         description: 'Integration with Urchin API for automatic blacklisting and client tags'
     });
@@ -28,7 +29,7 @@ module.exports = (api) => {
                 {
                     type: 'text',
                     key: 'api.apiKey',
-                    description: 'Your Urchin API key (required for functionality).',
+                    description: 'Your Urchin API key (optional - not required for tag checking).',
                     placeholder: 'Enter your Urchin API key'
                 }
             ]
@@ -201,12 +202,6 @@ class UrchinPlugin {
             return;
         }
         
-        const apiKey = this.api.config.get('api.apiKey');
-        if (!apiKey) {
-            this.sendErrorMessage('API key not configured. Set it in plugin config.');
-            return;
-        }
-        
         const usernames = args.split(' ').filter(Boolean);
         this.checkUsernamesOnly(usernames);
     }
@@ -265,15 +260,18 @@ class UrchinPlugin {
         const apiKey = this.api.config.get('api.apiKey');
         
         if (!apiKey) {
-            this.sendErrorMessage('No API key configured. Use "/urchin setkey <your-api-key>" to set it');
-            return;
+            this.sendInfoMessage('Testing API connection without API key...');
+        } else {
+            this.sendInfoMessage('Testing API connection with API key...');
         }
         
-        this.sendInfoMessage('Testing API connection...');
+        const path = apiKey 
+            ? `/player?key=${apiKey}&sources=MANUAL`
+            : `/player?sources=MANUAL`;
         
         const options = {
             hostname: 'urchin.ws',
-            path: `/player?key=${apiKey}&sources=MANUAL`,
+            path: path,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -290,7 +288,11 @@ class UrchinPlugin {
                 if (res.statusCode === 200) {
                     try {
                         JSON.parse(data);
-                        this.sendSuccessMessage('API key is valid and working!');
+                        if (apiKey) {
+                            this.sendSuccessMessage('API key is valid and working!');
+                        } else {
+                            this.sendSuccessMessage('API connection successful (no API key)!');
+                        }
                     } catch (e) {
                         if (data === "Invalid Key") {
                             this.sendErrorMessage('Invalid API key - use "/urchin setkey <key>" to update it');
@@ -410,9 +412,13 @@ class UrchinPlugin {
         const apiKey = this.api.config.get('api.apiKey');
         
         return new Promise((resolve, reject) => {
+            const path = apiKey 
+                ? `/player?key=${apiKey}&sources=MANUAL`
+                : `/player?sources=MANUAL`;
+                
             const options = {
                 hostname: 'urchin.ws',
-                path: `/player?key=${apiKey}&sources=MANUAL`,
+                path: path,
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -457,12 +463,6 @@ class UrchinPlugin {
         const filteredUsernames = skipIgnore ? usernames : usernames.filter(username => !ignoredUsers.includes(username));
         
         if (filteredUsernames.length === 0) return;
-        
-        const apiKey = this.api.config.get('api.apiKey');
-        if (!apiKey) {
-            this.sendErrorMessage('API key not configured. Set it in plugin config.');
-            return;
-        }
         
         this.batchCheckUrchinTags(filteredUsernames).then(response => {
             this.displayTagResults(response, filteredUsernames, { infoOnly: false });
@@ -588,9 +588,13 @@ class UrchinPlugin {
             const requestBody = { usernames: usernames };
             const jsonBody = JSON.stringify(requestBody);
             
+            const path = apiKey 
+                ? `/player?key=${apiKey}&sources=${sources}`
+                : `/player?sources=${sources}`;
+            
             const options = {
                 hostname: 'urchin.ws',
-                path: `/player?key=${apiKey}&sources=${sources}`,
+                path: path,
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

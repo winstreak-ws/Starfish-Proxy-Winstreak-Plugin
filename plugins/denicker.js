@@ -6,7 +6,7 @@ module.exports = (api) => {
         name: 'denicker',
         displayName: 'Denicker',
         prefix: '§cDN',
-        version: '0.1.5',
+        version: '0.1.6',
         author: 'Hexze',
         description: 'Detects and resolves nicked players (Inspired by github.com/PugrillaDev)',
     });
@@ -21,7 +21,7 @@ module.exports = (api) => {
                 alerts: { 
                     enabled: true, 
                     audioAlerts: { enabled: true }, 
-                    alertDelay: 500 
+                    alertDelay: 1000
                 }
             },
             settings: [
@@ -45,7 +45,8 @@ module.exports = (api) => {
                     values: [
                         { text: '0ms', value: 0 },
                         { text: '500ms', value: 500 },
-                        { text: '1000ms', value: 1000 }
+                        { text: '1000ms', value: 1000 },
+                        { text: '1500ms', value: 1500 }
                     ]
                 }
             ]

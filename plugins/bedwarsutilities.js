@@ -1,9 +1,12 @@
+// Bedwars Utilities
+// Auto /who & more in the future
+
 module.exports = (api) => {
     api.metadata({
         name: 'bedwarsutilities',
         displayName: 'Bedwars Utilities',
         prefix: '§eBW',
-        version: '0.1.1',
+        version: '0.1.2',
         author: 'Hexze',
         description: 'Various utilities for the Bedwars gamemode',
     });
@@ -16,7 +19,7 @@ module.exports = (api) => {
             description: 'Configure when to automatically run /who command.',
             defaults: { 
                 enabled: true,
-                delay: 1000
+                delay: 0
             },
             settings: [
                 {
@@ -33,8 +36,7 @@ module.exports = (api) => {
                     values: [
                         { text: '0ms', value: 0 },
                         { text: '500ms', value: 500 },
-                        { text: '1000ms', value: 1000 },
-                        { text: '2000ms', value: 2000 }
+                        { text: '1000ms', value: 1000 }
                     ]
                 }
             ]
@@ -103,6 +105,5 @@ class BedwarsWho {
 
     runWhoCommand() {
         this.api.sendChatToServer('/who');
-        this.api.debugLog('Automatically ran /who command for Bedwars game');
     }
 }
