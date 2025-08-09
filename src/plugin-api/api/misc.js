@@ -117,11 +117,11 @@ class Misc {
         }
     }
     
-    sendTeams(team, mode, name = '', prefix = '', suffix = '', friendlyFire = 0, nameTagVisibility = 'always', color = -1, players = []) {
+    sendScoreboardTeam(team, mode, name = '', prefix = '', suffix = '', friendlyFire = 0, nameTagVisibility = 'always', color = -1, players = []) {
         if (!this.proxy.currentPlayer?.client) return false;
         
         try {
-            return this.proxy.currentPlayer.client.write('teams', {
+            return this.proxy.currentPlayer.client.write('scoreboard_team', {
                 team,
                 mode,
                 name,
@@ -133,7 +133,7 @@ class Misc {
                 players
             });
         } catch (error) {
-            this.core.log(`Failed to send teams: ${error.message}`);
+            this.core.log(`Failed to send scoreboard team: ${error.message}`);
             return false;
         }
     }

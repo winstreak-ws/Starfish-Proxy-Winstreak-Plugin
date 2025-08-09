@@ -3,7 +3,7 @@ module.exports = {
         client_settings: {
             safe: false,
             eventMapping: {
-                name: 'client.settings',
+                name: 'client_settings',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     locale: data.locale,
@@ -30,7 +30,7 @@ module.exports = {
             safe: true,
             updatesState: true,
             eventMapping: {
-                name: 'playerList.update',
+                name: 'player_info',
                 extractor: (data, session) => {
                     const updates = [];
                     
@@ -74,7 +74,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'world.spawnPosition',
+                name: 'spawn_position',
                 extractor: (data) => ({
                     location: data.location
                 })
@@ -84,7 +84,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'player.respawn',
+                name: 'respawn',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     dimension: data.dimension,
@@ -98,7 +98,7 @@ module.exports = {
             safe: true,
             updatesState: true,
             eventMapping: {
-                name: 'player.experience',
+                name: 'player_experience',
                 extractor: (data) => ({
                     experienceBar: data.experienceBar,
                     level: data.level,
@@ -110,7 +110,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'player.health',
+                name: 'update_health',
                 extractor: (data) => ({
                     health: data.health,
                     food: data.food,
@@ -122,7 +122,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'player.abilities',
+                name: 'abilities',
                 extractor: (data) => ({
                     flags: data.flags,
                     flyingSpeed: data.flyingSpeed,
@@ -134,7 +134,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'player.teleport',
+                name: 'position',
                 extractor: (data) => ({
                     x: data.x,
                     y: data.y,

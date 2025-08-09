@@ -100,6 +100,7 @@ class PluginAPI {
         // player query methods
         this.getPlayer = this.playersModule.getPlayer.bind(this.playersModule);
         this.getPlayerByName = this.playersModule.getPlayerByName.bind(this.playersModule);
+        this.getCurrentPlayer = this.playersModule.getCurrentPlayer.bind(this.playersModule);
         this.getPlayerInfo = this.playersModule.getPlayerInfo.bind(this.playersModule);
         this.calculateDistance = this.playersModule.calculateDistance.bind(this.playersModule);
         this.getPlayersWithinDistance = this.playersModule.getPlayersWithinDistance.bind(this.playersModule);
@@ -149,7 +150,7 @@ class PluginAPI {
         this.sendScoreboardObjective = this.miscModule.sendScoreboardObjective.bind(this.miscModule);
         this.sendScoreboardScore = this.miscModule.sendScoreboardScore.bind(this.miscModule);
         this.sendScoreboardDisplay = this.miscModule.sendScoreboardDisplay.bind(this.miscModule);
-        this.sendTeams = this.miscModule.sendTeams.bind(this.miscModule);
+        this.sendScoreboardTeam = this.miscModule.sendScoreboardTeam.bind(this.miscModule);
     }
     
     setPluginEnabled(pluginName, enabled) {
@@ -235,7 +236,7 @@ class PluginAPI {
             teams: this.getTeams()
         };
         
-        this.emit('plugin.restored', { pluginName, currentState });
+        this.emit('plugin_restored', { pluginName, currentState });
         
         console.log(`Restored state for re-enabled plugin: ${pluginName}`);
     }
@@ -787,7 +788,7 @@ class PluginAPI {
             onWorldChange: (callback) => {
                 if (!pluginState) return () => {};
                 const wrappedCallback = withEnabledCheck(callback, 'worldChangeHandler');
-                return mainAPI.on('world.change', wrappedCallback);
+                return mainAPI.on('world_change', wrappedCallback);
             },
             
             get players() { 
@@ -795,6 +796,7 @@ class PluginAPI {
             },
             getPlayer: withEnabledCheck(mainAPI.getPlayer, 'getPlayer'),
             getPlayerByName: withEnabledCheck(mainAPI.getPlayerByName, 'getPlayerByName'),
+            getCurrentPlayer: withEnabledCheck(mainAPI.getCurrentPlayer, 'getCurrentPlayer'),
             getPlayerInfo: withEnabledCheck(mainAPI.getPlayerInfo, 'getPlayerInfo'),
             calculateDistance: withEnabledCheck(mainAPI.calculateDistance, 'calculateDistance'),
             getPlayersWithinDistance: withEnabledCheck(mainAPI.getPlayersWithinDistance, 'getPlayersWithinDistance'),
@@ -871,7 +873,7 @@ class PluginAPI {
             sendScoreboardObjective: withEnabledCheck(mainAPI.sendScoreboardObjective, 'sendScoreboardObjective'),
             sendScoreboardScore: withEnabledCheck(mainAPI.sendScoreboardScore, 'sendScoreboardScore'),
             sendScoreboardDisplay: withEnabledCheck(mainAPI.sendScoreboardDisplay, 'sendScoreboardDisplay'),
-            sendTeams: withEnabledCheck(mainAPI.sendTeams, 'sendTeams'),
+            sendScoreboardTeam: withEnabledCheck(mainAPI.sendScoreboardTeam, 'sendScoreboardTeam'),
             
             // display names & UI
             setCustomDisplayName: (uuid, displayName) => {
@@ -954,7 +956,7 @@ class PluginAPI {
     }
     
     _handleWorldChange(reason) {
-        this.emit('world.change', { reason });
+        this.emit('world_change', { reason });
         
         this.displayNames._handleWorldChange(reason);
     }

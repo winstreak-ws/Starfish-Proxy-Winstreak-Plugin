@@ -3,7 +3,7 @@ module.exports = {
         use_entity: {
             safe: false,
             eventMapping: {
-                name: 'client.useEntity',
+                name: 'client_use_entity',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     targetEntity: data.target,
@@ -18,7 +18,7 @@ module.exports = {
         entity_action: {
             safe: false,
             eventMapping: {
-                name: 'client.entityAction',
+                name: 'client_entity_action',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     actionId: data.actionId,
@@ -32,7 +32,7 @@ module.exports = {
             safe: true,
             updatesState: true,
             eventMapping: {
-                name: 'entity.spawn',
+                name: 'spawn_entity_living',
                 extractor: (data, session) => ({
                     entity: {
                         entityId: data.entityId,
@@ -51,7 +51,7 @@ module.exports = {
             safe: true,
             updatesState: true,
             eventMapping: {
-                name: 'player.spawn',
+                name: 'named_entity_spawn',
                 extractor: (data, session) => ({
                     player: {
                         entityId: data.entityId,
@@ -69,7 +69,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'entity.remove',
+                name: 'entity_destroy',
                 extractor: (data, session) => {
                     const entities = [];
                     const players = [];
@@ -95,7 +95,7 @@ module.exports = {
             safe: true,
             updatesState: true,
             eventMapping: {
-                name: 'entity.metadata',
+                name: 'entity_metadata',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     if (!entity) return null;
@@ -114,7 +114,7 @@ module.exports = {
             safe: true,
             updatesState: true,
             eventMapping: {
-                name: 'entity.equipment',
+                name: 'entity_equipment',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     if (!entity) return null;
@@ -135,7 +135,7 @@ module.exports = {
         animation: {
             safe: true,
             eventMapping: {
-                name: 'entity.animation',
+                name: 'entity_animation',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     if (!entity) return null;
@@ -155,7 +155,7 @@ module.exports = {
         entity_status: {
             safe: true,
             eventMapping: {
-                name: 'entity.status',
+                name: 'entity_status',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     if (!entity) return null;

@@ -3,7 +3,7 @@ module.exports = {
         chat: {
             safe: true,
             eventMapping: {
-                name: 'client.chat',
+                name: 'client_chat',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     message: data.message
@@ -13,7 +13,7 @@ module.exports = {
         tab_complete: {
             safe: true,
             eventMapping: {
-                name: 'client.tabComplete',
+                name: 'client_tab_complete',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     text: data.text
@@ -40,7 +40,7 @@ module.exports = {
         tab_complete: {
             safe: true,
             eventMapping: {
-                name: 'server.tabComplete',
+                name: 'server_tab_complete',
                 extractor: (data) => ({
                     matches: data.matches
                 })
@@ -71,7 +71,7 @@ module.exports = {
         disconnect: {
             safe: false,
             eventMapping: {
-                name: 'server.disconnect',
+                name: 'server_disconnect',
                 extractor: (data) => ({
                     reason: data.reason
                 })
@@ -80,7 +80,7 @@ module.exports = {
         kick_disconnect: {
             safe: false,
             eventMapping: {
-                name: 'server.disconnect',
+                name: 'server_disconnect',
                 extractor: (data) => ({
                     reason: data.reason
                 })

@@ -4,7 +4,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'player.move',
+                name: 'player_move',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     position: { x: data.x, y: data.y, z: data.z },
@@ -17,7 +17,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'player.move',
+                name: 'player_move',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     position: { x: data.x, y: data.y, z: data.z },
@@ -30,7 +30,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'player.move',
+                name: 'player_move',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     position: { ...session.gameState.position },
@@ -53,7 +53,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'entity.move',
+                name: 'entity_move',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     if (!entity) return null;
@@ -79,7 +79,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'entity.move',
+                name: 'entity_move',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     if (!entity) return null;
@@ -109,7 +109,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'entity.move',
+                name: 'entity_move',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     if (!entity) return null;
@@ -139,7 +139,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'entity.velocity',
+                name: 'entity_velocity',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     if (!entity) return null;

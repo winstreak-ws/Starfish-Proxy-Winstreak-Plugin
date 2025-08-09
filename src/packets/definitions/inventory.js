@@ -4,7 +4,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'client.windowClick',
+                name: 'client_window_click',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     windowId: data.windowId,
@@ -20,7 +20,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'client.closeWindow',
+                name: 'client_close_window',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     windowId: data.windowId
@@ -31,7 +31,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'client.heldItemChange',
+                name: 'client_held_item_change',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     slot: data.slotId
@@ -50,7 +50,7 @@ module.exports = {
             safe: true,
             updatesState: true,
             eventMapping: {
-                name: 'inventory.setSlot',
+                name: 'inventory_set_slot',
                 extractor: (data) => ({
                     windowId: data.windowId,
                     slot: data.slot,
@@ -62,7 +62,7 @@ module.exports = {
             safe: true,
             updatesState: true,
             eventMapping: {
-                name: 'inventory.setItems',
+                name: 'inventory_set_items',
                 extractor: (data) => ({
                     windowId: data.windowId,
                     items: data.items
@@ -73,7 +73,7 @@ module.exports = {
             safe: true,
             updatesState: true,
             eventMapping: {
-                name: 'inventory.open',
+                name: 'inventory_open',
                 extractor: (data) => ({
                     windowId: data.windowId,
                     windowType: data.inventoryType,
@@ -86,7 +86,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'inventory.close',
+                name: 'inventory_close',
                 extractor: (data) => ({
                     windowId: data.windowId
                 })
@@ -96,7 +96,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'inventory.transaction',
+                name: 'inventory_transaction',
                 extractor: (data) => ({
                     windowId: data.windowId,
                     action: data.action,
@@ -108,7 +108,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'server.heldItemChange',
+                name: 'server_held_item_change',
                 extractor: (data) => ({
                     slot: data.slot
                 })

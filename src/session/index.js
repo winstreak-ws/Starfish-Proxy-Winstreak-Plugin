@@ -152,10 +152,8 @@ class PlayerSession {
         this.gameState.reset();
         this.gameState.loginPacket = packet;
         
-        this._handleWorldChange('login');
-        
         this.client.write('login', packet);
-        this.proxy.pluginAPI.emit('player.join', { 
+        this.proxy.pluginAPI.emit('player_join', { 
             player: this._createCurrentPlayerObject()
         });
         
@@ -274,18 +272,13 @@ class PlayerSession {
         }
         
         if (this.connected) {
-            this.proxy.pluginAPI.emit('player.leave', { 
+            this.proxy.pluginAPI.emit('player_leave', { 
                 player: this._createCurrentPlayerObject()
             });
         }
         
         this.connected = false;
         this.proxy.clearSession();
-    }
-    
-    
-    _handleWorldChange(reason) {
-        this.proxy.pluginAPI._handleWorldChange(reason);
     }
 }
 

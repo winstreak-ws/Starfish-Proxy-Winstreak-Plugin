@@ -3,7 +3,7 @@ module.exports = {
         update_sign: {
             safe: false,
             eventMapping: {
-                name: 'client.updateSign',
+                name: 'client_update_sign',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     location: data.location,
@@ -16,7 +16,7 @@ module.exports = {
         update_sign: {
             safe: true,
             eventMapping: {
-                name: 'world.updateSign',
+                name: 'world_update_sign',
                 extractor: (data) => ({
                     location: data.location,
                     text: data.text
@@ -27,7 +27,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'entity.effect',
+                name: 'entity_effect',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     return entity ? {
@@ -44,7 +44,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'entity.removeEffect',
+                name: 'entity_remove_effect',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     return entity ? {
@@ -58,7 +58,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'entity.attach',
+                name: 'entity_attach',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     const vehicle = data.vehicleId !== -1 ? session.gameState.entities.get(data.vehicleId) : null;
@@ -74,7 +74,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'player.experience',
+                name: 'player_experience',
                 extractor: (data) => ({
                     experienceBar: data.experienceBar,
                     level: data.level,
@@ -86,7 +86,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'entity.updateAttributes',
+                name: 'entity_update_attributes',
                 extractor: (data, session) => {
                     const entity = session.gameState.entities.get(data.entityId);
                     return entity ? {
@@ -99,7 +99,7 @@ module.exports = {
         craft_recipe_response: {
             safe: true,
             eventMapping: {
-                name: 'inventory.craftRecipeResponse',
+                name: 'inventory_craft_recipe_response',
                 extractor: (data) => ({
                     windowId: data.windowId,
                     recipe: data.recipe

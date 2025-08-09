@@ -1,4 +1,4 @@
-/* STARFISH_SIGNATURE: AJpG/Vi6ynUJ4gmSNhb4inwKaWTeo5XVnAEVxw97yQb7F6zYLmU6iTggdraV8bgamSKhuBowWn+14mEWdwt3GwXGRgn435sxRDTCDMbZeV1DEXe7ZH0JTjoYarKmF3QnU+aiszLlFHNYSOXjl8A+NJExjde+UjCGBBhsZ6PQeU12wnbv8cuJtIWepyNG5tM8lms52nDlHzBLwH5Oc0DiNDh7HOITN4RPkOp4FupCfavpcu4IZ0Y1i9P9G84LvZe1hHw0A63bpPuwZ2DV0vUXEYvfafEF8PpJwO9bpmvWfASyU7gmYwzW02/n0fyShI3h9QIJOeIN0e5LeuhnfGmyhQ== */
+/* STARFISH_SIGNATURE: RB+4Kp7/Gz4aNi1/ioeDIJ0oIMCrCEcwbpdqjqhQTPOza/yvDt0TTjQiQWys9pG3eaY9dY8duTOvQLa0DTFfBvs2yLifIlTR7B1AIhJBYf7CZwTOYRnaCrDFRgEcKZ2E37uY0xE0m0WX9pGna9jo/EUoIwA9imwBZGHqqWbFAu+au7NLkaXLuxviVmn7B8FuqcPsh8hbikRTT9kxlN1n/dXS3PFgSSanNfVNF2ozXw4EOGOz7ssE/pjYqXxh2pKJiTpG6XLP9QE4dT4JfzMr21DYloKBealk0uqnGwFLvv2qwwOk+omRArZFkGv2lPMv683FazSIo4koIfkESApBog== */
 // Urchin Integration Plugin
 // Provides automatic tag checking, blacklisting, and client tag display
 
@@ -152,12 +152,12 @@ class UrchinPlugin {
     }
 
     registerHandlers() {
-        this.api.on('packet:server:chat', this.onChatPacket.bind(this));
-        this.api.on('world.change', this.onWorldChange.bind(this));
-        this.api.on('plugin.restored', this.onPluginRestored.bind(this));
+        this.api.on('chat', this.onChat.bind(this));
+        this.api.on('respawn', this.onRespawn.bind(this));
+        this.api.on('plugin_restored', this.onPluginRestored.bind(this));
     }
 
-    onWorldChange(event) {
+    onRespawn(event) {
         this.taggedDisplayNames.clear();
         this.api.clearAllCustomDisplayNames();
     }
@@ -168,26 +168,19 @@ class UrchinPlugin {
         }
     }
 
-    onChatPacket(event) {
+    onChat(event) {
         if (!this.api.config.get('alerts.enabled')) return;
-        if (event.data.position === 2) return;
+        if (event.position === 2) return;
 
-        try {
-            const text = this.extractTextFromJson(event.data.message);
-            const cleanText = this.stripColorCodes(text);
-            
-            if (cleanText.trim()) {
-                if (cleanText.startsWith('ONLINE:')) {
-                    const usernames = cleanText
-                        .replace('ONLINE:', '')
-                        .split(',')
-                        .map(name => name.trim())
-                        .filter(name => name.length > 0);
-                    this.processUsernames(usernames, false);
-                }
-            }
-        } catch (err) {
-            this.api.debugLog(`Error processing chat packet: ${err.message}`);
+        const cleanText = this.stripColorCodes(event.message);
+        
+        if (cleanText.startsWith('ONLINE:')) {
+            const usernames = cleanText
+                .replace('ONLINE:', '')
+                .split(',')
+                .map(name => name.trim())
+                .filter(name => name.length > 0);
+            this.processUsernames(usernames, false);
         }
     }
 

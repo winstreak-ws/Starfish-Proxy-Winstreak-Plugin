@@ -3,7 +3,7 @@ module.exports = {
         block_place: {
             safe: false,
             eventMapping: {
-                name: 'client.blockPlace',
+                name: 'client_block_place',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     location: data.location,
@@ -18,7 +18,7 @@ module.exports = {
         block_dig: {
             safe: false,
             eventMapping: {
-                name: 'client.blockDig',
+                name: 'client_block_dig',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     status: data.status,
@@ -41,7 +41,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'world.blockChange',
+                name: 'world_block_change',
                 extractor: (data) => ({
                     location: data.location,
                     type: data.type
@@ -52,7 +52,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'world.multiBlockChange',
+                name: 'world_multi_block_change',
                 extractor: (data) => ({
                     chunkX: data.chunkX,
                     chunkZ: data.chunkZ,
@@ -63,7 +63,7 @@ module.exports = {
         explosion: {
             safe: true,
             eventMapping: {
-                name: 'world.explosion',
+                name: 'world_explosion',
                 extractor: (data) => ({
                     x: data.x,
                     y: data.y,
@@ -79,7 +79,7 @@ module.exports = {
         sound_effect: {
             safe: true,
             eventMapping: {
-                name: 'world.sound',
+                name: 'world_sound',
                 extractor: (data) => ({
                     soundName: data.soundName,
                     x: data.x / 8,
@@ -93,7 +93,7 @@ module.exports = {
         named_sound_effect: {
             safe: true,
             eventMapping: {
-                name: 'world.sound',
+                name: 'world_sound',
                 extractor: (data) => ({
                     soundName: data.soundName,
                     x: data.x / 8,
@@ -107,7 +107,7 @@ module.exports = {
         particle: {
             safe: true,
             eventMapping: {
-                name: 'world.particle',
+                name: 'world_particle',
                 extractor: (data) => ({
                     particleId: data.particleId,
                     longDistance: data.longDistance,
@@ -126,7 +126,7 @@ module.exports = {
         game_state_change: {
             safe: false,
             eventMapping: {
-                name: 'world.gameStateChange',
+                name: 'world_game_state_change',
                 extractor: (data) => ({
                     reason: data.reason,
                     gameMode: data.gameMode
@@ -137,7 +137,7 @@ module.exports = {
             safe: false,
             updatesState: true,
             eventMapping: {
-                name: 'world.time',
+                name: 'world_time',
                 extractor: (data) => ({
                     age: data.age,
                     time: data.time

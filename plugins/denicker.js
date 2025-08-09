@@ -6,7 +6,7 @@ module.exports = (api) => {
         name: 'denicker',
         displayName: 'Denicker',
         prefix: '§cDN',
-        version: '0.1.6',
+        version: '1.0.0',
         author: 'Hexze',
         description: 'Detects and resolves nicked players (Inspired by github.com/PugrillaDev)',
     });
@@ -124,13 +124,13 @@ class Denicker {
     }
 
     registerHandlers() {
-        this.api.on('playerList.update', this.onPlayerListUpdate.bind(this));
-        this.api.on('teamUpdate', this.onTeamUpdate.bind(this));
-        this.api.on('world.change', this.onWorldChange.bind(this));
-        this.api.on('plugin.restored', this.onPluginRestored.bind(this));
+        this.api.on('player_info', this.onPlayerListUpdate.bind(this));
+        this.api.on('scoreboard_team', this.onTeamUpdate.bind(this));
+        this.api.on('respawn', this.onRespawn.bind(this));
+        this.api.on('plugin_restored', this.onPluginRestored.bind(this));
     }
 
-    onWorldChange(event) {
+    onRespawn(event) {
         this.reset();  
         this.api.clearAllCustomDisplayNames();
     }

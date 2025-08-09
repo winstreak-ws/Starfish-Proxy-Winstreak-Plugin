@@ -6,7 +6,7 @@ module.exports = (api) => {
         name: 'anticheat',
         displayName: 'Anticheat',
         prefix: '§cAC',
-        version: '0.1.3',
+        version: '0.2.1',
         author: 'Hexze',
         description: 'Advanced cheater detector system (Inspired by github.com/PugrillaDev)',
     });
@@ -562,65 +562,62 @@ class AnticheatSystem {
             }
         });
 
-        this.unsubscribeWorldChange = this.api.on('world.change', () => {
-            this.reset();
-        });
-        
-        this.unsubscribePluginRestored = this.api.on('plugin.restored', (event) => {
+        this.unsubscribePluginRestored = this.api.on('plugin_restored', (event) => {
             if (event.pluginName === 'anticheat') {
                 this.reset();
             }
         });
+
         
-        this.unsubscribeEntityMove = this.api.on('entity.move', (event) => {
+        this.unsubscribeEntityMove = this.api.on('entity_move', (event) => {
             if (event.isPlayer && event.entity) {
                 this.handleEntityMove(event);
             }
         });
         
-        this.unsubscribeEntityAnimation = this.api.on('entity.animation', (event) => {
+        this.unsubscribeEntityAnimation = this.api.on('entity_animation', (event) => {
             if (event.isPlayer && event.entity) {
                 this.handleEntityAnimation(event);
             }
         });
         
-        this.unsubscribePlayerJoin = this.api.on('player.join', (event) => {
+        this.unsubscribePlayerJoin = this.api.on('player_join', (event) => {
             this.handlePlayerJoin(event);
         });
         
-        this.unsubscribePlayerLeave = this.api.on('player.leave', (event) => {
+        this.unsubscribePlayerLeave = this.api.on('player_leave', (event) => {
             this.handlePlayerLeave(event);
         });
         
-        this.unsubscribeRespawn = this.api.on('world.change', () => {
+        this.unsubscribeRespawn = this.api.on('respawn', () => {
             this.reset();
         });
         
-        this.unsubscribePlayerInfo = this.api.on('playerList.update', (event) => {
+        this.unsubscribePlayerInfo = this.api.on('player_info', (event) => {
             this.handlePlayerListUpdate(event);
         });
         
-        this.unsubscribeEntitySpawn = this.api.on('player.spawn', (event) => {
+        this.unsubscribeEntitySpawn = this.api.on('named_entity_spawn', (event) => {
             this.handlePlayerSpawn(event);
         });
         
-        this.unsubscribeEntityDestroy = this.api.on('entity.remove', (event) => {
+        this.unsubscribeEntityDestroy = this.api.on('entity_destroy', (event) => {
             this.handleEntityRemove(event);
         });
         
-        this.unsubscribeEntityMetadata = this.api.on('entity.metadata', (event) => {
+        this.unsubscribeEntityMetadata = this.api.on('entity_metadata', (event) => {
             this.handleEntityMetadataFromEvent(event);
         });
         
-        this.unsubscribeEntityEquipment = this.api.on('entity.equipment', (event) => {
+        this.unsubscribeEntityEquipment = this.api.on('entity_equipment', (event) => {
             this.handleEntityEquipmentFromEvent(event);
         });
         
-        this.unsubscribeEntityStatus = this.api.on('entity.status', (event) => {
+        this.unsubscribeEntityStatus = this.api.on('entity_status', (event) => {
             this.handleEntityStatusFromEvent(event);
         });
         
-        this.unsubscribePosition = this.api.on('player.move', (event) => {
+        this.unsubscribePosition = this.api.on('player_move', (event) => {
             if (event.player && event.player.isCurrentPlayer) {
                 this.userPosition = event.position;
             }
@@ -959,9 +956,6 @@ class AnticheatSystem {
     cleanup() {
         if (this.unsubscribeTick) {
             this.unsubscribeTick();
-        }
-        if (this.unsubscribeWorldChange) {
-            this.unsubscribeWorldChange();
         }
         if (this.unsubscribePluginRestored) {
             this.unsubscribePluginRestored();

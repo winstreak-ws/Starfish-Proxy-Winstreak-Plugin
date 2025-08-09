@@ -6,9 +6,8 @@ class DisplayNames {
         this.customDisplayNames = new Map();
         this.originalDisplayNames = new Map();
         
-        this.events.on('playerList.update', (data) => this._onPlayerListUpdate(data));
-        this.events.on('teamUpdate', (data) => this._handleTeamUpdate(data));
-        this.events.on('world.change', (data) => this._handleWorldChange(data));
+        this.events.on('player_info', (data) => this._onPlayerListUpdate(data));
+        this.events.on('scoreboard_team', (data) => this._handleTeamUpdate(data));
     }
     
     setCustomDisplayName(uuid, displayName) {
@@ -169,42 +168,6 @@ class DisplayNames {
         
         this.customDisplayNames.clear();
         this.originalDisplayNames.clear();
-    }
-    
-    _handleWorldChange(reason) {
-        const namesToRestore = new Map(this.customDisplayNames);
-        
-        this._clearCustomDisplayNames();
-        
-        if (namesToRestore.size > 0) {
-            const restoreHandler = (data) => {
-                if (data.action === 0) {
-                    for (const player of data.players) {
-                        if (namesToRestore.has(player.uuid)) {
-                            this.setCustomDisplayName(player.uuid, namesToRestore.get(player.uuid));
-                            namesToRestore.delete(player.uuid);
-                            
-                            if (namesToRestore.size === 0) {
-                                this.events.off('playerList.update', restoreHandler);
-                            }
-                        }
-                    }
-                }
-            };
-            
-            this.events.on('playerList.update', restoreHandler);
-            
-            for (const [uuid, name] of namesToRestore) {
-                if (this.proxy.currentPlayer?.gameState?.playerInfo.has(uuid)) {
-                    this.setCustomDisplayName(uuid, name);
-                    namesToRestore.delete(uuid);
-                }
-            }
-            
-            if (namesToRestore.size === 0) {
-                this.events.off('playerList.update', restoreHandler);
-            }
-        }
     }
 }
 

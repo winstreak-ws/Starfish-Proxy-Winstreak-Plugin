@@ -3,7 +3,7 @@ module.exports = {
         keep_alive: {
             safe: false,
             eventMapping: {
-                name: 'client.keepAlive',
+                name: 'client_keep_alive',
                 extractor: (data) => ({
                     keepAliveId: data.keepAliveId
                 })
@@ -12,7 +12,7 @@ module.exports = {
         custom_payload: {
             safe: true,
             eventMapping: {
-                name: 'client.customPayload',
+                name: 'client_custom_payload',
                 extractor: (data, session) => ({
                     player: session._createCurrentPlayerObject(),
                     channel: data.channel,
@@ -31,7 +31,7 @@ module.exports = {
         keep_alive: {
             safe: false,
             eventMapping: {
-                name: 'server.keepAlive',
+                name: 'server_keep_alive',
                 extractor: (data) => ({
                     keepAliveId: data.keepAliveId
                 })
@@ -40,7 +40,7 @@ module.exports = {
         custom_payload: {
             safe: true,
             eventMapping: {
-                name: 'server.customPayload',
+                name: 'server_custom_payload',
                 extractor: (data) => ({
                     channel: data.channel,
                     data: data.data
@@ -75,7 +75,7 @@ module.exports = {
         scoreboard_objective: {
             safe: true,
             eventMapping: {
-                name: 'scoreboard.objective',
+                name: 'scoreboard_objective',
                 extractor: (data) => ({
                     name: data.name,
                     action: data.action,
@@ -87,7 +87,7 @@ module.exports = {
         scoreboard_score: {
             safe: true,
             eventMapping: {
-                name: 'scoreboard.score',
+                name: 'scoreboard_score',
                 extractor: (data) => ({
                     itemName: data.itemName,
                     action: data.action,
@@ -99,7 +99,7 @@ module.exports = {
         scoreboard_display_objective: {
             safe: true,
             eventMapping: {
-                name: 'scoreboard.displayObjective',
+                name: 'scoreboard_display_objective',
                 extractor: (data) => ({
                     position: data.position,
                     name: data.name
@@ -110,7 +110,7 @@ module.exports = {
             safe: true,
             updatesState: true,
             eventMapping: {
-                name: 'teamUpdate',
+                name: 'scoreboard_team',
                 extractor: (data) => {
                     if ((data.mode === 3 || data.mode === 4) && data.team && !data.name) {
                         data.name = data.team;
@@ -127,7 +127,7 @@ module.exports = {
         resource_pack_send: {
             safe: true,
             eventMapping: {
-                name: 'resourcePack',
+                name: 'resource_pack_send',
                 extractor: (data) => ({
                     url: data.url,
                     hash: data.hash

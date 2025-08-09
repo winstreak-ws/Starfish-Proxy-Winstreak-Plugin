@@ -63,7 +63,7 @@ class BedwarsWho {
 
     registerHandlers() {
         this.api.on('chat', this.onChat.bind(this));
-        this.api.on('world.change', this.onWorldChange.bind(this));
+        this.api.on('respawn', this.onWorldChange.bind(this));
     }
 
     onWorldChange(event) {
