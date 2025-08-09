@@ -7,7 +7,7 @@ I heavily utilize Claude Code for this project. I try to the best of my ability 
 
 ## Quick Start
 
-### For Users (Windows)
+### For Users
 
 1. Download the latest release from the [Releases](https://github.com/Hexze/Starfish-Proxy/releases) tab
 2. Extract the ZIP file and run `starfish-proxy.exe`
