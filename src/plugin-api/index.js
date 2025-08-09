@@ -15,13 +15,14 @@ const { getPluginsDir } = require('../utils/paths');
 const { VersionUtils } = require('../utils/version-utils');
 const { DependencyResolver } = require('../utils/dependency-resolver');
 const { PluginSignatureVerifier } = require('./security/verifier');
+const packageJson = require('../../package.json');
 
 class PluginAPI {
     constructor(proxy, metadata) {
         this.proxy = proxy;
         this.metadata = metadata;
         this.loadedPlugins = [];
-        this.proxyVersion = '0.1.6';
+        this.proxyVersion = packageJson.version;
         this.dependencyResolver = new DependencyResolver();
         this.signatureVerifier = new PluginSignatureVerifier();
         
@@ -382,39 +383,26 @@ class PluginAPI {
             let pluginName;
             try {
                 const pluginPath = path.join(pluginsDir, file);
-                pluginName = path.basename(file, '.js');
                 
-                const fileContent = fs.readFileSync(pluginPath, 'utf8');
-                const verification = await this.signatureVerifier.verifyPlugin(fileContent, pluginName);
+                // Load the plugin module to extract actual metadata
+                delete require.cache[require.resolve(pluginPath)];
+                const plugin = require(pluginPath);
                 
-                if (verification.signature && !verification.verified) {
-                    console.error(`❌ Plugin ${pluginName} has invalid signature - refusing to load`);
-                    skippedPlugins.push(`${pluginName.charAt(0).toUpperCase() + pluginName.slice(1)} (invalid signature)`);
-                    continue;
-                }
-                
-                const pluginMetadata = {
-                    name: pluginName,
+                // Create a temporary metadata object to extract the real plugin name
+                const tempMetadata = {
+                    name: null,
                     path: pluginPath,
-                    displayName: pluginName.charAt(0).toUpperCase() + pluginName.slice(1),
+                    displayName: null,
                     version: '1.0.0',
                     minVersion: null,
                     maxVersion: null,
                     dependencies: [],
                     optionalDependencies: [],
-                    official: verification.isOfficial,
-                    signature: {
-                        verified: verification.verified,
-                        isOfficial: verification.isOfficial,
-                        hash: verification.hash,
-                        reason: verification.reason
-                    }
+                    official: false,
+                    signature: null
                 };
                 
-                delete require.cache[require.resolve(pluginPath)];
-                const plugin = require(pluginPath);
-                
-                const metadataWrapper = this.createMetadataOnlyWrapper(pluginMetadata);
+                const metadataWrapper = this.createMetadataOnlyWrapper(tempMetadata);
                 
                 try {
                     if (typeof plugin.init === 'function') {
@@ -423,7 +411,48 @@ class PluginAPI {
                         plugin(metadataWrapper);
                     }
                 } catch (initError) {
+                    // Ignore errors during metadata extraction
                 }
+                
+                // Plugin must declare its own name
+                if (!tempMetadata.name) {
+                    console.error(`❌ Plugin in ${file} does not declare a name - skipping`);
+                    skippedPlugins.push(`${file} (no name declared)`);
+                    continue;
+                }
+                
+                pluginName = tempMetadata.name;
+                
+                // Check for duplicate plugin names
+                if (pluginMetadataMap.has(pluginName)) {
+                    console.error(`❌ Plugin name conflict: ${pluginName} already loaded from another file`);
+                    skippedPlugins.push(`${file} (duplicate plugin name: ${pluginName})`);
+                    continue;
+                }
+                
+                // Now verify the signature with the actual plugin name
+                const fileContent = fs.readFileSync(pluginPath, 'utf8');
+                const verification = await this.signatureVerifier.verifyPlugin(fileContent, pluginName);
+                
+                if (verification.signature && !verification.verified) {
+                    console.error(`❌ Plugin ${pluginName} has invalid signature - refusing to load`);
+                    skippedPlugins.push(`${tempMetadata.displayName || pluginName} (invalid signature)`);
+                    continue;
+                }
+                
+                // Update the metadata with signature info
+                const pluginMetadata = {
+                    ...tempMetadata,
+                    name: pluginName,
+                    displayName: tempMetadata.displayName || pluginName.charAt(0).toUpperCase() + pluginName.slice(1),
+                    official: verification.isOfficial,
+                    signature: {
+                        verified: verification.verified,
+                        isOfficial: verification.isOfficial,
+                        hash: verification.hash,
+                        reason: verification.reason
+                    }
+                };
                 
                 const versionCheck = this._validatePluginVersion(pluginMetadata);
                 if (!versionCheck.compatible) {
@@ -436,7 +465,7 @@ class PluginAPI {
                 this.dependencyResolver.addPlugin(pluginMetadata);
                 
             } catch (error) {
-                const displayName = pluginName ? pluginName.charAt(0).toUpperCase() + pluginName.slice(1) : 'Unknown';
+                const displayName = pluginName ? pluginName.charAt(0).toUpperCase() + pluginName.slice(1) : file;
                 skippedPlugins.push(`${displayName} (parse error: ${error.message})`);
             }
         }
