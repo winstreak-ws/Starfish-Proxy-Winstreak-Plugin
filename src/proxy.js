@@ -171,14 +171,48 @@ class MinecraftProxy {
     
     handleAddServerCommand(ctx) {
         const { name, hostport } = ctx.args;
-        const [host, port] = hostport.split(':');
-        if (!host || !port) {
-            return ctx.sendError('Invalid format. Use: /proxy addserver <n> <host>:<port>');
+        if (!name || !hostport) {
+            return ctx.sendError('Invalid format. Use: /proxy addserver <name> <host>[:<port>]');
         }
-        
-        this.config.servers[name] = { host, port: parseInt(port) };
+
+        // Split host and port
+        const [host, portStr] = hostport.split(':');
+        if (!host || host.length < 1) {
+            return ctx.sendError('Invalid hostname.');
+        }
+
+        // Hostname validation
+        const hostnameRegex = /^([a-zA-Z0-9.-]+|\d{1,3}(\.\d{1,3}){3})$/;
+        if (!hostnameRegex.test(host)) {
+            return ctx.sendError('Invalid hostname format.');
+        }
+
+        // Check if the user is trying to add the proxy's own address (don't want to know what happens if they do that)
+        if (
+            (host === 'localhost' || host === '127.0.0.1' || host === '::1') &&
+            (portStr === undefined || parseInt(portStr, 10) === (this.config.proxyPort || PROXY_PORT))
+        ) {
+            return ctx.sendError('Cannot add the proxy\'s own address as a server.');
+        }
+        if (
+            host === this.config.proxyHost &&
+            (portStr === undefined || parseInt(portStr, 10) === (this.config.proxyPort || PROXY_PORT))
+        ) {
+            return ctx.sendError('Cannot add the proxy\'s own address as a server.');
+        }
+
+        // Port validation
+        let port = 25565;
+        if (portStr !== undefined) {
+            port = parseInt(portStr, 10);
+            if (isNaN(port) || port < 1 || port > 65535) {
+                return ctx.sendError('Invalid port. Must be a number between 1 and 65535.');
+            }
+        }
+
+        this.config.servers[name] = { host, port };
         this.storage.saveConfig(this.config);
-        ctx.sendSuccess(`Added server '${name}' (${hostport})`);
+        ctx.sendSuccess(`Added server '${name}' (${host}:${port})`);
     }
     
     handleRemoveServerCommand(ctx) {
