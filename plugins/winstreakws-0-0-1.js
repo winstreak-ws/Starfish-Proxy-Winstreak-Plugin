@@ -461,6 +461,12 @@ class WinstreakwsPlugin {
         }
 
         const apiKey = this.api.config.get('ws_pl.api.apikey');
+
+        if (!apiKey || apiKey.trim() === '') {
+            this.sendMessage('§cNo API key set. Use /winstreak setkey <your-api-key> to set it.');
+            return null;
+        }
+
         let url = `${BASE_URL}` + `v1/player/tags?player=${encodeURIComponent(player)}&key=${encodeURIComponent(apiKey)}&color=true`;
 
         // Add disabling tags
