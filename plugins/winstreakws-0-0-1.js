@@ -304,15 +304,17 @@ class WinstreakwsPlugin {
                     }
                 }
 
-                if (resolvedNicks.length > 0) {
+                // Track promises and results for all players
+                const allPlayerPromises = [];
+                let playersWithTags = 0;
 
+                if (resolvedNicks.length > 0) {
                     resolvedNicks.forEach(realName => {
                         const player = this.api.getPlayerByName(realName);
                         if (player) {
-
-                            this.fetchPlayerTags(player.uuid).then(tags => {
+                            const promise = this.fetchPlayerTags(player.uuid).then(tags => {
                                 if (tags && tags.length > 0) {
-
+                                    playersWithTags++;
 
                                     let formattedTags = [];
                                     // Add tags to the map for this uuid
@@ -352,12 +354,13 @@ class WinstreakwsPlugin {
                                             this.api.sound('note.pling');
                                         }
                                     }
-
                                 }
+                                return tags;
                             }).catch(err => {
                                 this.sendMessage(`§cError fetching tags for ${realName}: ${err.message}`);
-                            })
-
+                                return null;
+                            });
+                            allPlayerPromises.push(promise);
                         }
                     });
                 }
@@ -368,9 +371,9 @@ class WinstreakwsPlugin {
                     unnickedPlayers.forEach(name => {
                         const player = this.api.getPlayerByName(name);
                         if (player) {
-                            this.fetchPlayerTags(name).then(tags => {
+                            const promise = this.fetchPlayerTags(name).then(tags => {
                                 if (tags && tags.length > 0) {
-
+                                    playersWithTags++;
 
                                     let formattedTags = [];
                                     // Add tags to the map for this uuid (if player object exists)
@@ -413,11 +416,21 @@ class WinstreakwsPlugin {
                                             this.api.sound('note.pling');
                                         }
                                     }
-
                                 }
+                                return tags;
                             }).catch(err => {
                                 this.sendMessage(`§cError fetching tags for ${name}: ${err.message}`);
+                                return null;
                             });
+                            allPlayerPromises.push(promise);
+                        }
+                    });
+                }
+
+                if (allPlayerPromises.length > 0) {
+                    Promise.all(allPlayerPromises).then(() => {
+                        if (playersWithTags === 0 && this.api.config.get('ws_pl.alerts.enabled')) {
+                            this.sendMessage('§7No players with tags found.');
                         }
                     });
                 }
