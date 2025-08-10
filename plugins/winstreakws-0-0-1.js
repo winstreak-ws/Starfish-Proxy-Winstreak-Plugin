@@ -50,10 +50,12 @@ module.exports = (api) => {
             label: 'Alerts',
             description: 'Manage chat and audio alerts for players.',
             defaults: {
-                alerts: {
-                    enabled: true,
-                    audioAlerts: { enabled: true },
-                    alertDelay: 0
+                ws_pl: {
+                    alerts: {
+                        enabled: true,
+                        audioAlerts: { enabled: true },
+                        alertDelay: 0
+                    }
                 }
             },
             settings: [
@@ -111,6 +113,9 @@ module.exports = (api) => {
         {
             label: 'Color Settings',
             description: 'Customize the colors used.',
+            defaults: {
+                ws_pl: { customcolors: { enabled: true } }
+            },
             settings: [
                 {
                     type: 'toggle',
