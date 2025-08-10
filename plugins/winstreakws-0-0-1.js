@@ -230,6 +230,11 @@ module.exports = (api) => {
             .description('Set your Winstreak API key.')
             .argument('<apikey>', 'Your Winstreak API key')
             .handler((ctx) => plugin.handleSetKeyCommand(ctx.args.apikey));
+
+        registry.command('check')
+            .description('Check a specific player for tags.')
+            .argument('<username>', 'The username to check')
+            .handler((ctx) => plugin.handleCheckPlayerCommand(ctx.args.username));
     });
 
     plugin.registerHandlers();
@@ -255,7 +260,7 @@ class WinstreakwsPlugin {
 
     async handleSetKeyCommand(apiKey) {
         if (!apiKey || apiKey.trim() === '') {
-            this.sendMessage('§7Usage: /winstreak-ws setkey <your-api-key>');
+            this.sendMessage('§7Usage: /winstreak setkey <your-api-key>');
             return;
         }
 
@@ -268,6 +273,55 @@ class WinstreakwsPlugin {
             this.sendMessage('§aAPI key set successfully.');
         } else {
             this.sendMessage('§cCouldn\'t connect to Winstreak API. Check your key!')
+        }
+    }
+
+    async handleCheckPlayerCommand(username) {
+        if (!username || username.trim() === '') {
+            this.sendMessage('§7Usage: /winstreak check <username>');
+            return;
+        }
+
+        const apiKey = this.api.config.get('ws_pl.api.apikey');
+        if (!apiKey || apiKey.trim() === '') {
+            this.sendMessage('§cNo API key set. Use /winstreak setkey <your-api-key> to set it.');
+            return;
+        }
+
+        this.sendMessage(`§eChecking tags for ${username}...`);
+
+        try {
+            const tags = await this.fetchPlayerTags(username.trim());
+
+            if (tags && tags.length > 0) {
+                let formattedTags = [];
+                tags.forEach(tag => {
+                    let color = getMinecraftColorByNumber(tag.color);
+                    if (!this.api.config.get('ws_pl.customcolors.enabled')) color = '§9';
+                    formattedTags.push({
+                        text: `${color}${tag.name}§r`,
+                        hoverEvent: tag.description ? {
+                            action: 'show_text',
+                            value: tag.description
+                        } : undefined
+                    });
+                });
+
+                // Create chat message with hover for each tag
+                let message = {
+                    text: `${this.PLUGIN_PREFIX}§r ${username} has the following tags: `,
+                    extra: []
+                };
+                formattedTags.forEach((tagObj, idx) => {
+                    if (idx > 0) message.extra.push({ text: ' §7| §r' });
+                    message.extra.push(tagObj);
+                });
+                this.api.chat(message);
+            } else {
+                this.sendMessage(`§7No tags found for ${username}.`);
+            }
+        } catch (error) {
+            this.sendMessage(`§cError checking ${username}: ${error.message}`);
         }
     }
 
@@ -290,6 +344,13 @@ class WinstreakwsPlugin {
                 .split(',')
                 .map(name => name.trim())
                 .filter(name => name.length > 0);
+
+            const apiKey = this.api.config.get('ws_pl.api.apikey');
+
+            if (!apiKey || apiKey.trim() === '') {
+                this.sendMessage('§cNo API key set. Use /winstreak setkey <your-api-key> to set it.');
+                return null;
+            }
 
             const denickerPlugin = this.api.getPluginInstance('denicker');
             if (denickerPlugin) {
@@ -443,7 +504,7 @@ class WinstreakwsPlugin {
     async onPluginRestored() {
         const apiKey = this.api.config.get('ws_pl.api.apikey');
         if (!apiKey || apiKey.trim() === '') {
-            this.sendMessage('§cNo API key set. Use /winstreak-ws setkey <your-api-key> to set it.');
+            this.sendMessage('§cNo API key set. Use /winstreak setkey <your-api-key> to set it.');
             return;
         }
 
@@ -517,32 +578,32 @@ class WinstreakwsPlugin {
         if (this.cache) {
             await this.cache.clear();
         }
-        
+
         // Clear all existing suffixes first
         if (this.taggedPlayers && this.taggedPlayers.size > 0) {
             for (const uuid of this.taggedPlayers.keys()) {
                 this.api.clearDisplayNameSuffix(uuid);
             }
         }
-        
+
         // Get all current players to check for new tags when enabling tag types
         const allCurrentPlayers = this.api.getPlayers ? this.api.getPlayers() : [];
         const playersToCheck = new Set();
-        
+
         // Add previously tagged players
         if (this.taggedPlayers && this.taggedPlayers.size > 0) {
             for (const uuid of this.taggedPlayers.keys()) {
                 playersToCheck.add(uuid);
             }
         }
-        
+
         // Add all current players (in case they now have tags due to re-enabled tag types)
         for (const player of allCurrentPlayers) {
             if (player.uuid) {
                 playersToCheck.add(player.uuid);
             }
         }
-        
+
         // Re-fetch tags for all players with new settings
         for (const uuid of playersToCheck) {
             // Try to get player name from API if possible
@@ -552,12 +613,12 @@ class WinstreakwsPlugin {
                 player = allCurrentPlayers.find(p => p.uuid === uuid);
             }
             let playerName = player ? player.username || player.name : uuid;
-            
+
             // Fetch new tags (by uuid or name)
             let tags = await this.fetchPlayerTags(playerName);
             if (tags && tags.length > 0) {
                 this.taggedPlayers.set(uuid, tags);
-                
+
                 // Re-apply suffix if tablist is enabled
                 if (this.api.config.get('ws_pl.tablist.enabled')) {
                     const customColors = this.api.config.get('ws_pl.customcolors.enabled');
