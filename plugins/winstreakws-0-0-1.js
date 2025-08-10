@@ -275,7 +275,9 @@ class WinstreakwsPlugin {
         this.api.chat(`${this.PLUGIN_PREFIX}§r ${message}`);
     }
 
-    async onRespawn() { };
+    async onRespawn() {
+        this.api.clearAllDisplayNames();
+    };
 
     onChat(event) {
         if (event.position === 2) return;
@@ -515,19 +517,59 @@ class WinstreakwsPlugin {
         if (this.cache) {
             await this.cache.clear();
         }
-        // Re-fetch tags for all currently tagged players with new settings
+        
+        // Clear all existing suffixes first
         if (this.taggedPlayers && this.taggedPlayers.size > 0) {
-            for (const [uuid, oldTags] of this.taggedPlayers.entries()) {
-                // Try to get player name from API if possible
-                let player = this.api.getPlayerByUUID ? this.api.getPlayerByUUID(uuid) : null;
-                let playerName = player ? player.username || player.name : uuid;
-                // Fetch new tags (by uuid or name)
-                let tags = await this.fetchPlayerTags(playerName);
-                if (tags && tags.length > 0) {
-                    this.taggedPlayers.set(uuid, tags);
-                } else {
-                    this.taggedPlayers.delete(uuid);
+            for (const uuid of this.taggedPlayers.keys()) {
+                this.api.clearDisplayNameSuffix(uuid);
+            }
+        }
+        
+        // Get all current players to check for new tags when enabling tag types
+        const allCurrentPlayers = this.api.getPlayers ? this.api.getPlayers() : [];
+        const playersToCheck = new Set();
+        
+        // Add previously tagged players
+        if (this.taggedPlayers && this.taggedPlayers.size > 0) {
+            for (const uuid of this.taggedPlayers.keys()) {
+                playersToCheck.add(uuid);
+            }
+        }
+        
+        // Add all current players (in case they now have tags due to re-enabled tag types)
+        for (const player of allCurrentPlayers) {
+            if (player.uuid) {
+                playersToCheck.add(player.uuid);
+            }
+        }
+        
+        // Re-fetch tags for all players with new settings
+        for (const uuid of playersToCheck) {
+            // Try to get player name from API if possible
+            let player = this.api.getPlayerByUUID ? this.api.getPlayerByUUID(uuid) : null;
+            if (!player) {
+                // Try to find in current players list
+                player = allCurrentPlayers.find(p => p.uuid === uuid);
+            }
+            let playerName = player ? player.username || player.name : uuid;
+            
+            // Fetch new tags (by uuid or name)
+            let tags = await this.fetchPlayerTags(playerName);
+            if (tags && tags.length > 0) {
+                this.taggedPlayers.set(uuid, tags);
+                
+                // Re-apply suffix if tablist is enabled
+                if (this.api.config.get('ws_pl.tablist.enabled')) {
+                    const customColors = this.api.config.get('ws_pl.customcolors.enabled');
+                    const suffix = ' §7[' + tags.map(tag => {
+                        let color = getMinecraftColorByNumber(tag.color);
+                        if (!customColors) color = '§9';
+                        return `${color}${tag.name}`;
+                    }).join(' §7| §r') + '§7]';
+                    this.api.appendDisplayNameSuffix(uuid, suffix);
                 }
+            } else {
+                this.taggedPlayers.delete(uuid);
             }
         }
     }
