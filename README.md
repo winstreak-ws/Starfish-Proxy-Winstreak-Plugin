@@ -191,7 +191,7 @@ The proxy enforces packet safety to maintain compatibility with Hypixel:
 ## Credits
 
 - Created by Hexze
-- Special thanks to J0nahG for starting the project and assisting me, and to Desiyn, and nilsraccoon for contributing to development.
+- Special thanks to J0nahG for starting the project and assisting me, and to Desiyn and nilsraccoon for contributing to development.
 
 ## Support
 
