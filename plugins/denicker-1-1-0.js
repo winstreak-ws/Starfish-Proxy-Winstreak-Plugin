@@ -4,10 +4,11 @@
 module.exports = (api) => {
     api.metadata({
         name: 'denicker',
-        displayName: 'Denicker',
+        displayName: 'Nick Alerts',
         prefix: '§cDN',
-        version: '1.0.0',
+        version: '1.1.0',
         author: 'Hexze',
+        minVersion: '0.1.7',
         description: 'Detects and resolves nicked players (Inspired by github.com/PugrillaDev)',
     });
 
@@ -121,6 +122,7 @@ class Denicker {
         this.nickDisplayNames = new Map();
         this.pendingChecks = new Map();
         this.teamDataReceived = new Set();
+        this.resolvedNicks = new Map();
     }
 
     registerHandlers() {
@@ -132,7 +134,7 @@ class Denicker {
 
     onRespawn(event) {
         this.reset();  
-        this.api.clearAllCustomDisplayNames();
+        this.api.clearAllDisplayNames();
     }
 
     onPluginRestored(event) {
@@ -148,6 +150,7 @@ class Denicker {
         this.pendingChecks.clear();
         this.teamDataReceived.clear();
         this.nickDisplayNames.clear();
+        this.resolvedNicks.clear();
     }
 
     onPlayerListUpdate(event) {
@@ -221,6 +224,8 @@ class Denicker {
             const realName = skinData.profileName;
             if (realName && realName !== name) {
                 this.api.debugLog(`Resolved nick: ${name} -> ${realName}`);
+                this.resolvedNicks.set(name, realName);
+                this.api.emit('denicker:nick_resolved', { nickName: name, realName: realName, uuid: uuid });
                 this.sendCubelifyMessage(realName);
                 this.sendAlert(teamFormattedName, realName);
                 this.setNickDisplayName(uuid, name, realName);
@@ -235,14 +240,13 @@ class Denicker {
         
         if (this.api.config.get('modifyDisplayNames.enabled')) {
             const nickSuffix = realName ? ` §c(${realName})` : ` §c[NICK]`;
-            const baseDisplayName = nickName + nickSuffix;
-            this.api.setCustomDisplayName(uuid, baseDisplayName);
+            this.api.prependDisplayNameSuffix(uuid, nickSuffix);
         }
     }
 
     _clearDisplayNames() {
         for (const [uuid] of this.nickDisplayNames) {
-            this.api.clearCustomDisplayName(uuid);
+            this.api.clearDisplayNameSuffix(uuid);
         }
         this.api.debugLog('Cleared all denicker display names');
     }
@@ -280,6 +284,19 @@ class Denicker {
         
         const cubelifyMsg = `§cCan't find a player by the name of '+${realName}'`;
         this.api.chat(cubelifyMsg);
+    }
+    
+    isNicked(playerName) {
+        for (const [uuid, data] of this.nickDisplayNames) {
+            if (data.nickName === playerName) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    getRealName(nickName) {
+        return this.resolvedNicks.get(nickName) || null;
     }
 }
 

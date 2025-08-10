@@ -4,7 +4,7 @@
 module.exports = (api) => {
     api.metadata({
         name: 'anticheat',
-        displayName: 'Anticheat',
+        displayName: 'Cheater Detector',
         prefix: '§cAC',
         version: '0.2.1',
         author: 'Hexze',

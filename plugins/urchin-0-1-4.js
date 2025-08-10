@@ -1,4 +1,3 @@
-/* STARFISH_SIGNATURE: RB+4Kp7/Gz4aNi1/ioeDIJ0oIMCrCEcwbpdqjqhQTPOza/yvDt0TTjQiQWys9pG3eaY9dY8duTOvQLa0DTFfBvs2yLifIlTR7B1AIhJBYf7CZwTOYRnaCrDFRgEcKZ2E37uY0xE0m0WX9pGna9jo/EUoIwA9imwBZGHqqWbFAu+au7NLkaXLuxviVmn7B8FuqcPsh8hbikRTT9kxlN1n/dXS3PFgSSanNfVNF2ozXw4EOGOz7ssE/pjYqXxh2pKJiTpG6XLP9QE4dT4JfzMr21DYloKBealk0uqnGwFLvv2qwwOk+omRArZFkGv2lPMv683FazSIo4koIfkESApBog== */
 // Urchin Integration Plugin
 // Provides automatic tag checking, blacklisting, and client tag display
 
@@ -7,11 +6,15 @@ const https = require('https');
 module.exports = (api) => {
     api.metadata({
         name: 'urchin',
-        displayName: 'Urchin',
+        displayName: 'Urchin Blacklist Integration',
         prefix: '§5BL',
-        version: '0.1.3',
+        version: '0.1.4',
         author: 'Hexze',
-        description: 'Integration with Urchin API for automatic blacklisting and client tags'
+        minVersion: '0.1.7',
+        description: 'Integration with Urchin API for automatic blacklisting and client tags',
+        dependencies: [
+            { name: 'denicker', minVersion: '1.1.0' }
+        ]
     });
 
     const urchin = new UrchinPlugin(api);
@@ -79,7 +82,19 @@ module.exports = (api) => {
                     type: 'toggle',
                     key: 'modifyDisplayNames.enabled',
                     text: ['OFF', 'ON'],
-                    description: 'Adds a label to tagged players in tab to indicate their tags.'
+                    description: 'Adds a label to tagged players in tab to indicate their tags.',
+                    onChange: (enabled) => {
+                        if (enabled) {
+                            for (const [uuid, data] of urchin.taggedDisplayNames) {
+                                const tagIcon = urchin.getTagIcon(data.tag.type);
+                                const tagColor = urchin.getTagColor(data.tag.type);
+                                const tagSuffix = ` §8[§${tagColor}${tagIcon}§8]§r`;
+                                urchin.api.appendDisplayNameSuffix(uuid, tagSuffix);
+                            }
+                        } else {
+                            urchin._clearDisplayNames();
+                        }
+                    }
                 }
             ]
         },
@@ -159,7 +174,7 @@ class UrchinPlugin {
 
     onRespawn(event) {
         this.taggedDisplayNames.clear();
-        this.api.clearAllCustomDisplayNames();
+        this.api.clearAllDisplayNames();
     }
 
     onPluginRestored(event) {
@@ -180,6 +195,56 @@ class UrchinPlugin {
                 .split(',')
                 .map(name => name.trim())
                 .filter(name => name.length > 0);
+            
+            const denickerPlugin = this.api.getPluginInstance('denicker');
+            if (denickerPlugin) {
+                const resolvedNicks = [];
+                const nickMappings = new Map();
+                
+                for (const username of usernames) {
+                    const realName = denickerPlugin.getRealName(username);
+                    if (realName) {
+                        resolvedNicks.push(realName);
+                        nickMappings.set(realName, username);
+                        this.api.debugLog(`Urchin: Found resolved nick ${username} -> ${realName}`);
+                    }
+                }
+                
+                if (resolvedNicks.length > 0) {
+                    this.batchCheckUrchinTags(resolvedNicks).then(response => {
+                        for (const realName in response.players) {
+                            const tags = response.players[realName];
+                            const nickName = nickMappings.get(realName);
+                            
+                            if (tags && tags.length > 0 && nickName) {
+                                this.displayDenickedTags(nickName, realName, tags);
+                                
+                                if (this.api.config.get('modifyDisplayNames.enabled')) {
+                                    const player = this.api.getPlayerByName(nickName);
+                                    if (player) {
+                                        const priorityTag = this.getHighestPriorityTag(tags);
+                                        const tagIcon = this.getTagIcon(priorityTag.type);
+                                        const tagColor = this.getTagColor(priorityTag.type);
+                                        const tagSuffix = ` §8[§${tagColor}${tagIcon}§8]§r`;
+                                        
+                                        this.taggedDisplayNames.set(player.uuid, { username: nickName, tag: priorityTag, realName: realName });
+                                        this.api.appendDisplayNameSuffix(player.uuid, tagSuffix);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (Object.keys(response.players).some(name => response.players[name]?.length > 0)) {
+                            if (this.api.config.get('alerts.audioAlerts.enabled')) {
+                                this.api.sound('note.pling');
+                            }
+                        }
+                    }).catch(err => {
+                        this.api.debugLog(`Urchin: Error checking resolved nicks: ${err.message}`);
+                    });
+                }
+            }
+            
             this.processUsernames(usernames, false);
         }
     }
@@ -210,6 +275,78 @@ class UrchinPlugin {
                 this.sendErrorMessage(`Error checking tags: ${err.message}`);
             }
         });
+    }
+    
+    displayDenickedTags(nickName, realName, tags) {
+        const player = this.api.getPlayerByName(nickName);
+        const team = player ? this.api.getPlayerTeam(player.name) : null;
+        const prefix = team?.prefix || '';
+        const suffix = team?.suffix || '';
+        
+        const teamFormattedName = `${prefix}${nickName} §c(${realName})§r${suffix}`;
+        
+        const hoverText = [
+            { text: `§5Urchin Blacklist Tags\n` },
+            { text: `§7§m-------------------------------------§r\n` }
+        ];
+        
+        tags.forEach((tag, index) => {
+            const timeAgo = this.getTimeAgo(tag.added_on);
+            const tagType = this.formatTagType(tag.type);
+            const tagColor = this.getTagColor(tag.type);
+            const tagIcon = this.getTagIcon(tag.type);
+            
+            hoverText.push({ text: `§${tagColor}${tagType} [${tagIcon}]\n` });
+            hoverText.push({ text: `§9"${tag.reason}"\n` });
+            hoverText.push({ text: `§7- Added ${timeAgo}\n` });
+            
+            if (index < tags.length - 1) {
+                hoverText.push({ text: `\n` });
+            }
+        });
+        
+        hoverText.push({ text: `\n§8Click to paste info in chat` });
+
+        const tagComponents = [];
+        tags.forEach((tag, index) => {
+            const tagIcon = this.getTagIcon(tag.type);
+            const tagColor = this.getTagColor(tag.type);
+            const timeAgo = this.getTimeAgo(tag.added_on);
+            const tagType = this.formatTagType(tag.type);
+            
+            tagComponents.push({
+                text: `${index === 0 ? ' ' : ''}§8[§${tagColor}${tagIcon}§8]§r`,
+                hoverEvent: {
+                    action: "show_text",
+                    value: { text: "", extra: hoverText }
+                },
+                clickEvent: {
+                    action: "suggest_command",
+                    value: `⚠ ${nickName} (${realName}) [${tagType}] | "${tag.reason}" - Added ${timeAgo}`
+                }
+            });
+        });
+
+        const message = {
+            text: `${this.PLUGIN_PREFIX} `,
+            extra: [
+                { 
+                    text: teamFormattedName,
+                    color: "white",
+                    clickEvent: {
+                        action: "suggest_command",
+                        value: `${nickName} (${realName})`
+                    },
+                    hoverEvent: {
+                        action: "show_text",
+                        value: { text: "§8Click to put names in chat" }
+                    }
+                },
+                ...tagComponents
+            ]
+        };
+        
+        this.api.chat(message);
     }
 
     displayTagResults(response, usernames, options = {}) {
@@ -482,11 +619,16 @@ class UrchinPlugin {
         const tagIcon = this.getTagIcon(tag.type);
         const tagColor = this.getTagColor(tag.type);
         const tagSuffix = ` §8[§${tagColor}${tagIcon}§8]§r`;
-
-        const displayName = player.name + tagSuffix;
         
         this.taggedDisplayNames.set(player.uuid, { username: player.name, tag });
-        this.api.setCustomDisplayName(player.uuid, displayName);
+        this.api.appendDisplayNameSuffix(player.uuid, tagSuffix);
+    }
+
+    _clearDisplayNames() {
+        for (const [uuid] of this.taggedDisplayNames) {
+            this.api.clearDisplayNameSuffix(uuid);
+        }
+        this.api.debugLog('Urchin: Cleared all tag display names');
     }
 
     getHighestPriorityTag(tags) {

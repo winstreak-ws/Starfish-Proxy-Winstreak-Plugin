@@ -17,6 +17,7 @@ const { DependencyResolver } = require('../utils/dependency-resolver');
 const { PluginSignatureVerifier } = require('./security/verifier');
 const packageJson = require('../../package.json');
 
+
 class PluginAPI {
     constructor(proxy, metadata) {
         this.proxy = proxy;
@@ -27,6 +28,7 @@ class PluginAPI {
         this.signatureVerifier = new PluginSignatureVerifier();
         
         this.pluginStates = new Map();
+        this.pluginInstances = new Map();
         
         this.core = new Core(proxy, metadata);
         this.playersModule = new Players(proxy, this.core);
@@ -43,18 +45,11 @@ class PluginAPI {
         this.config = this.core.config;
         this.log = this.core.log.bind(this.core);
         this.debugLog = this.core.debugLog.bind(this.core);
-        this.getPrefix = () => `§8[§r${this.proxy.PROXY_PREFIX}§8-§r${this.metadata.prefix}§8]§r`;
         
         this.on = this.events.on.bind(this.events);
         this.emit = this.events.emit.bind(this.events);
         this.intercept = this.events.intercept.bind(this.events);
         this.everyTick = this.events.everyTick.bind(this.events);
-        
-        this.setCustomDisplayName = this.displayNames.setCustomDisplayName.bind(this.displayNames);
-        this.updatePlayerList = this.displayNames.updatePlayerList.bind(this.displayNames);
-        this.clearAllCustomDisplayNames = this.displayNames.clearAllCustomDisplayNames.bind(this.displayNames);
-        this.clearCustomDisplayName = this.displayNames.clearCustomDisplayName.bind(this.displayNames);
-        this.customDisplayNames = this.displayNames.customDisplayNames;
         
         // chat methods
         this.chat = this.communicationModule.chat.bind(this.communicationModule);
@@ -184,9 +179,7 @@ class PluginAPI {
                     const depName = typeof dep === 'string' ? dep : dep.name;
                     const depState = this.pluginStates.get(depName);
                     if (!depState || !depState.enabled) {
-                        const depPlugin = this.loadedPlugins.find(p => p.name === depName);
-                        const depDisplayName = depPlugin ? depPlugin.displayName : depName;
-                        disabledDeps.push(depDisplayName);
+                        disabledDeps.push(depName);
                     }
                 }
                 
@@ -213,10 +206,7 @@ class PluginAPI {
     }
     
     _cleanupPlugin(pluginName, pluginState) {
-        for (const uuid of pluginState.modifications.displayNames) {
-            this.clearCustomDisplayName(uuid);
-        }
-        pluginState.modifications.displayNames.clear();
+        this.displayNames.clearAll(pluginName);
         
         for (const interceptorInfo of pluginState.modifications.interceptors) {
             if (interceptorInfo.unsubscribe) {
@@ -384,15 +374,14 @@ class PluginAPI {
             try {
                 const pluginPath = path.join(pluginsDir, file);
                 
-                // Load the plugin module to extract actual metadata
                 delete require.cache[require.resolve(pluginPath)];
                 const plugin = require(pluginPath);
                 
-                // Create a temporary metadata object to extract the real plugin name
                 const tempMetadata = {
                     name: null,
                     path: pluginPath,
                     displayName: null,
+                    prefix: null,
                     version: '1.0.0',
                     minVersion: null,
                     maxVersion: null,
@@ -411,10 +400,8 @@ class PluginAPI {
                         plugin(metadataWrapper);
                     }
                 } catch (initError) {
-                    // Ignore errors during metadata extraction
                 }
                 
-                // Plugin must declare its own name
                 if (!tempMetadata.name) {
                     console.error(`❌ Plugin in ${file} does not declare a name - skipping`);
                     skippedPlugins.push(`${file} (no name declared)`);
@@ -423,14 +410,12 @@ class PluginAPI {
                 
                 pluginName = tempMetadata.name;
                 
-                // Check for duplicate plugin names
                 if (pluginMetadataMap.has(pluginName)) {
                     console.error(`❌ Plugin name conflict: ${pluginName} already loaded from another file`);
                     skippedPlugins.push(`${file} (duplicate plugin name: ${pluginName})`);
                     continue;
                 }
                 
-                // Now verify the signature with the actual plugin name
                 const fileContent = fs.readFileSync(pluginPath, 'utf8');
                 const verification = await this.signatureVerifier.verifyPlugin(fileContent, pluginName);
                 
@@ -440,7 +425,6 @@ class PluginAPI {
                     continue;
                 }
                 
-                // Update the metadata with signature info
                 const pluginMetadata = {
                     ...tempMetadata,
                     name: pluginName,
@@ -555,11 +539,16 @@ class PluginAPI {
                 });
                 
                 const pluginAPI = this.createPluginWrapper(pluginMetadata);
+                let pluginInstance = null;
                 try {
                     if (typeof plugin.init === 'function') {
-                        plugin.init(pluginAPI);
+                        pluginInstance = plugin.init(pluginAPI);
                     } else if (typeof plugin === 'function') {
-                        plugin(pluginAPI);
+                        pluginInstance = plugin(pluginAPI);
+                    }
+                    
+                    if (pluginInstance) {
+                        this.pluginInstances.set(pluginName, pluginInstance);
                     }
                 } catch (initError) {
                     console.error(`Plugin ${pluginName} initialization failed: ${initError.message}`);
@@ -581,7 +570,7 @@ class PluginAPI {
                     isOfficial: pluginMetadata.official === true && pluginMetadata.signature.verified
                 });
                 
-                loadedPlugins.push(pluginMetadata.displayName);
+                loadedPlugins.push(`${pluginMetadata.displayName} (${pluginName}-v${pluginMetadata.version})`);
                 
             } catch (error) {
                 const pluginMeta = pluginMetadataMap.get(pluginName);
@@ -904,21 +893,44 @@ class PluginAPI {
             sendScoreboardDisplay: withEnabledCheck(mainAPI.sendScoreboardDisplay, 'sendScoreboardDisplay'),
             sendScoreboardTeam: withEnabledCheck(mainAPI.sendScoreboardTeam, 'sendScoreboardTeam'),
             
-            // display names & UI
-            setCustomDisplayName: (uuid, displayName) => {
-                if (!mainAPI._checkPluginEnabled(pluginName, 'setCustomDisplayName')) return;
-                
-                pluginState.modifications.displayNames.add(uuid);
-                return mainAPI.setCustomDisplayName(uuid, displayName);
+            setDisplayNamePrefix: (uuid, prefix) => {
+                if (!mainAPI._checkPluginEnabled(pluginName, 'setDisplayNamePrefix')) return;
+                mainAPI.displayNames.setPrefix(pluginName, uuid, prefix);
             },
-            clearCustomDisplayName: (uuid) => {
-                if (!mainAPI._checkPluginEnabled(pluginName, 'clearCustomDisplayName')) return;
-                
-                pluginState.modifications.displayNames.delete(uuid);
-                return mainAPI.clearCustomDisplayName(uuid);
+            appendDisplayNamePrefix: (uuid, prefix) => {
+                if (!mainAPI._checkPluginEnabled(pluginName, 'appendDisplayNamePrefix')) return;
+                mainAPI.displayNames.appendPrefix(pluginName, uuid, prefix);
             },
-            updatePlayerList: withEnabledCheck(mainAPI.updatePlayerList, 'updatePlayerList'),
-            clearAllCustomDisplayNames: withEnabledCheck(mainAPI.clearAllCustomDisplayNames, 'clearAllCustomDisplayNames'),
+            prependDisplayNamePrefix: (uuid, prefix) => {
+                if (!mainAPI._checkPluginEnabled(pluginName, 'prependDisplayNamePrefix')) return;
+                mainAPI.displayNames.prependPrefix(pluginName, uuid, prefix);
+            },
+            setDisplayNameSuffix: (uuid, suffix) => {
+                if (!mainAPI._checkPluginEnabled(pluginName, 'setDisplayNameSuffix')) return;
+                mainAPI.displayNames.setSuffix(pluginName, uuid, suffix);
+            },
+            appendDisplayNameSuffix: (uuid, suffix) => {
+                if (!mainAPI._checkPluginEnabled(pluginName, 'appendDisplayNameSuffix')) return;
+                mainAPI.displayNames.appendSuffix(pluginName, uuid, suffix);
+            },
+            prependDisplayNameSuffix: (uuid, suffix) => {
+                if (!mainAPI._checkPluginEnabled(pluginName, 'prependDisplayNameSuffix')) return;
+                mainAPI.displayNames.prependSuffix(pluginName, uuid, suffix);
+            },
+            clearDisplayNamePrefix: (uuid) => {
+                if (!mainAPI._checkPluginEnabled(pluginName, 'clearDisplayNamePrefix')) return;
+                mainAPI.displayNames.clearPrefix(pluginName, uuid);
+            },
+            clearDisplayNameSuffix: (uuid) => {
+                if (!mainAPI._checkPluginEnabled(pluginName, 'clearDisplayNameSuffix')) return;
+                mainAPI.displayNames.clearSuffix(pluginName, uuid);
+            },
+            clearAllDisplayNames: () => {
+                if (!mainAPI._checkPluginEnabled(pluginName, 'clearAllDisplayNames')) return;
+                mainAPI.displayNames.clearAll(pluginName);
+            },
+            getDisplayNamePrefix: withEnabledCheck((uuid) => mainAPI.displayNames.getPrefix(uuid), 'getDisplayNamePrefix'),
+            getDisplayNameSuffix: withEnabledCheck((uuid) => mainAPI.displayNames.getSuffix(uuid), 'getDisplayNameSuffix'),
             
             // commands
             commands: (commands) => {
@@ -930,6 +942,25 @@ class PluginAPI {
                     console.log(`[SECURITY] Official plugin ${pluginName} using raw packet interception`);
                     return mainAPI.events.registerPacketInterceptor(direction, packets, handler);
                 }, 'rawIntercept')
+            },
+            
+            getPluginInstance: (targetPluginName) => {
+                const dependencies = pluginMetadata.dependencies || [];
+                const hasDependency = dependencies.some(dep => {
+                    const depName = typeof dep === 'string' ? dep : dep.name;
+                    return depName === targetPluginName;
+                });
+                
+                if (!hasDependency) {
+                    throw new Error(`Plugin '${pluginName}' cannot access '${targetPluginName}' - not declared as dependency`);
+                }
+                
+                const targetState = mainAPI.pluginStates.get(targetPluginName);
+                if (!targetState || !targetState.enabled) {
+                    return null;
+                }
+                
+                return mainAPI.pluginInstances.get(targetPluginName) || null;
             },
             
             isOfficial: () => isOfficial,

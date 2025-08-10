@@ -175,19 +175,16 @@ class MinecraftProxy {
             return ctx.sendError('Invalid format. Use: /proxy addserver <name> <host>[:<port>]');
         }
 
-        // Split host and port
         const [host, portStr] = hostport.split(':');
         if (!host || host.length < 1) {
             return ctx.sendError('Invalid hostname.');
         }
 
-        // Hostname validation
         const hostnameRegex = /^([a-zA-Z0-9.-]+|\d{1,3}(\.\d{1,3}){3})$/;
         if (!hostnameRegex.test(host)) {
             return ctx.sendError('Invalid hostname format.');
         }
 
-        // Check if the user is trying to add the proxy's own address (don't want to know what happens if they do that)
         if (
             (host === 'localhost' || host === '127.0.0.1' || host === '::1') &&
             (portStr === undefined || parseInt(portStr, 10) === (this.config.proxyPort || PROXY_PORT))
@@ -201,7 +198,6 @@ class MinecraftProxy {
             return ctx.sendError('Cannot add the proxy\'s own address as a server.');
         }
 
-        // Port validation
         let port = 25565;
         if (portStr !== undefined) {
             port = parseInt(portStr, 10);
