@@ -34,7 +34,8 @@ module.exports = (api) => {
             description: 'Set your Winstreak API key for plugin authentication.',
             defaults: {
                 api: {
-                    apiKey: ''
+                    apiKey: '',
+                    keyValid: false
                 }
             },
             settings: [
@@ -270,13 +271,16 @@ class WinstreakwsPlugin {
         }
 
         this.api.config.set('ws_pl.api.apikey', apiKey.trim());
+        this.api.config.set('ws_pl.api.keyValid', false); // Reset validity while testing
         this.sendMessage('§eTesting API connection...');
 
         const isConnected = await this.testApiConnection();
         if (isConnected) {
+            this.api.config.set('ws_pl.api.keyValid', true);
             this.sendMessage('§2Succesfully connected to Winstreak API.')
             this.sendMessage('§aAPI key set successfully.');
         } else {
+            this.api.config.set('ws_pl.api.keyValid', false);
             this.sendMessage('§cCouldn\'t connect to Winstreak API. Check your key!')
         }
     }
@@ -288,8 +292,15 @@ class WinstreakwsPlugin {
         }
 
         const apiKey = this.api.config.get('ws_pl.api.apikey');
+        const keyValid = this.api.config.get('ws_pl.api.keyValid');
+        
         if (!apiKey || apiKey.trim() === '') {
             this.sendMessage('§cNo API key set. Use /winstreak setkey <your-api-key> to set it.');
+            return;
+        }
+        
+        if (!keyValid) {
+            this.sendMessage('§cAPI key is not valid. Please set a valid API key using /winstreak setkey <your-api-key>');
             return;
         }
 
@@ -344,18 +355,20 @@ class WinstreakwsPlugin {
         const cleanText = event.message.replace(/§[0-9a-fk-or]/g, '');
 
         if (cleanText.startsWith('ONLINE:')) {
+            const apiKey = this.api.config.get('ws_pl.api.apikey');
+            const keyValid = this.api.config.get('ws_pl.api.keyValid');
+
+            // Check if API key is set and valid
+            if (!apiKey || apiKey.trim() === '' || !keyValid) {
+                // Do nothing - silently ignore the ONLINE message if key is invalid
+                return;
+            }
+
             let usernames = cleanText
                 .replace('ONLINE:', '')
                 .split(',')
                 .map(name => name.trim())
                 .filter(name => name.length > 0);
-
-            const apiKey = this.api.config.get('ws_pl.api.apikey');
-
-            if (!apiKey || apiKey.trim() === '') {
-                this.sendMessage('§cNo API key set. Use /winstreak setkey <your-api-key> to set it.');
-                return null;
-            }
 
             const denickerPlugin = this.api.getPluginInstance('denicker');
             if (denickerPlugin) {
@@ -509,12 +522,16 @@ class WinstreakwsPlugin {
     async onPluginRestored() {
         const apiKey = this.api.config.get('ws_pl.api.apikey');
         if (!apiKey || apiKey.trim() === '') {
+            this.api.config.set('ws_pl.api.keyValid', false);
             this.sendMessage('§cNo API key set. Use /winstreak setkey <your-api-key> to set it.');
             return;
         }
 
         const isConnected = await this.testApiConnection();
-        if (!isConnected) {
+        if (isConnected) {
+            this.api.config.set('ws_pl.api.keyValid', true);
+        } else {
+            this.api.config.set('ws_pl.api.keyValid', false);
             this.sendMessage('§cCouldn\'t connect to Winstreak API. Check your key!');
         }
     }
