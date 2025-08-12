@@ -2,13 +2,44 @@
 // Enables automatic checking and displaying winstreak.ws's data of players.
 
 
-const axios = require('axios');
+const https = require('https');
 
-const axiosInstance = axios.create({
-    headers: {
-        'User-Agent': 'Starfish-Proxy-Winstreak-Plugin/0.0.1 (WinstreakWS)'
-    }
-});
+// Helper function to make HTTPS GET requests
+function httpsGet(url) {
+    return new Promise((resolve, reject) => {
+        const options = {
+            headers: {
+                'User-Agent': 'Starfish-Proxy-Winstreak-Plugin/0.0.2 (WinstreakWS)'
+            }
+        };
+
+        const req = https.get(url, options, (res) => {
+            let data = '';
+
+            res.on('data', (chunk) => {
+                data += chunk;
+            });
+
+            res.on('end', () => {
+                try {
+                    const jsonData = JSON.parse(data);
+                    resolve({ data: jsonData, status: res.statusCode });
+                } catch (error) {
+                    reject(new Error(`Failed to parse JSON: ${error.message}`));
+                }
+            });
+        });
+
+        req.on('error', (error) => {
+            reject(error);
+        });
+
+        req.setTimeout(10000, () => {
+            req.destroy();
+            reject(new Error('Request timeout'));
+        });
+    });
+}
 
 const BASE_URL = 'https://api.winstreak.ws/';
 
@@ -17,7 +48,7 @@ module.exports = (api) => {
         name: 'winstreak',
         displayName: 'Winstreak.ws Integration',
         prefix: '§9W§fS',
-        version: '0.0.1',
+        version: '0.0.2',
         author: 'Qetrox@Winstreak.ws',
         minVersion: '0.1.7',
         description: 'Enables automatic checking and displaying winstreak.ws\'s data of players.',
@@ -542,8 +573,11 @@ class WinstreakwsPlugin {
         const url = `${BASE_URL}v1/user?key=${encodeURIComponent(apiKey)}`;
 
         try {
-            const response = await axiosInstance.get(url).catch((error) => { return null });
-            return response.data.current_key === apiKey;
+            const response = await httpsGet(url);
+            if (response && response.data) {
+                return response.data.current_key === apiKey;
+            }
+            return false;
         } catch (error) {
             console.error('Error connecting to Winstreak API:', error);
             return false;
@@ -585,7 +619,7 @@ class WinstreakwsPlugin {
         if (!stataccEnabled) url += '&statacc=false';
 
         try {
-            const response = await axiosInstance.get(url);
+            const response = await httpsGet(url);
             const tags = response.data.tags;
             // Cache for 30 minutes (1800000 ms)
             await this.cache.addKey(cacheKey, tags, 30 * 60 * 1000);
