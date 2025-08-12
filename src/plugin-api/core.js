@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getPluginConfigDir } = require('../utils/paths');
+const { getCryptoManager } = require('../utils/crypto');
 
 class Core {
     constructor(proxy, metadata) {
@@ -52,7 +53,14 @@ class Core {
             get: (key) => {
                 try {
                     const current = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-                    return key ? this._getNestedValue(current, key) : current;
+                    let value = key ? this._getNestedValue(current, key) : current;
+                    
+                    // Decrypt encrypted values when retrieving
+                    if (key && this._isEncryptedField(key) && typeof value === 'string' && this._isEncryptedData(value)) {
+                        value = this._decryptValue(value);
+                    }
+                    
+                    return value;
                 } catch (e) {
                     return key ? this._getNestedValue(defaultConfig, key) : defaultConfig;
                 }
@@ -61,7 +69,14 @@ class Core {
             set: (key, value) => {
                 try {
                     const current = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-                    this._setNestedValue(current, key, value);
+                    
+                    // Encrypt values for encrypted fields
+                    let valueToStore = value;
+                    if (this._isEncryptedField(key) && typeof value === 'string' && value !== '') {
+                        valueToStore = this._encryptValue(value);
+                    }
+                    
+                    this._setNestedValue(current, key, valueToStore);
                     fs.writeFileSync(configPath, JSON.stringify(current, null, 2));
                     
                     if (key === 'enabled') this.enabled = value;
@@ -71,6 +86,42 @@ class Core {
                 } catch (e) {
                     this.log(`Failed to save config: ${e.message}`);
                     return false;
+                }
+            },
+
+            // Method to set encrypted values explicitly
+            setEncrypted: (key, value) => {
+                try {
+                    const current = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                    
+                    let valueToStore = value;
+                    if (typeof value === 'string' && value !== '') {
+                        valueToStore = this._encryptValue(value);
+                    }
+                    
+                    this._setNestedValue(current, key, valueToStore);
+                    fs.writeFileSync(configPath, JSON.stringify(current, null, 2));
+                    
+                    return true;
+                } catch (e) {
+                    this.log(`Failed to save encrypted config: ${e.message}`);
+                    return false;
+                }
+            },
+
+            // Method to get decrypted values explicitly
+            getDecrypted: (key) => {
+                try {
+                    const current = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                    let value = this._getNestedValue(current, key);
+                    
+                    if (typeof value === 'string' && this._isEncryptedData(value)) {
+                        value = this._decryptValue(value);
+                    }
+                    
+                    return value;
+                } catch (e) {
+                    return undefined;
                 }
             }
         };
@@ -101,6 +152,47 @@ class Core {
             current = current[key];
         }
         current[keys[keys.length - 1]] = value;
+    }
+
+    _isEncryptedField(key) {
+        if (!this.configSchema || !Array.isArray(this.configSchema)) {
+            return false;
+        }
+
+        for (const section of this.configSchema) {
+            if (section.settings && Array.isArray(section.settings)) {
+                const setting = section.settings.find(s => s.key === key);
+                if (setting && setting.encrypted === true) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    _encryptValue(value) {
+        try {
+            const crypto = getCryptoManager();
+            return crypto.encrypt(value);
+        } catch (error) {
+            this.log(`Failed to encrypt value: ${error.message}`);
+            return value; // Fallback to unencrypted
+        }
+    }
+
+    _decryptValue(value) {
+        try {
+            const crypto = getCryptoManager();
+            return crypto.decrypt(value);
+        } catch (error) {
+            this.log(`Failed to decrypt value: ${error.message}`);
+            return value; // Return as-is if decryption fails
+        }
+    }
+
+    _isEncryptedData(value) {
+        const crypto = getCryptoManager();
+        return crypto.isEncrypted(value);
     }
     
         log(message) {
