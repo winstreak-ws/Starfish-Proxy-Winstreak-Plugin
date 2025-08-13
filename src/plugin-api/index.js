@@ -9,6 +9,7 @@ const Entities = require('./api/entity');
 const Inventory = require('./api/inventory');
 const Movement = require('./api/movement');
 const Misc = require('./api/misc');
+const Hypixel = require('./api/hypixel');
 const fs = require('fs');
 const path = require('path');
 const { getPluginsDir } = require('../utils/paths');
@@ -41,6 +42,7 @@ class PluginAPI {
         this.inventoryModule = new Inventory(proxy, this.core);
         this.movementModule = new Movement(proxy, this.core);
         this.miscModule = new Misc(proxy, this.core);
+        this.hypixelModule = new Hypixel(proxy, this.core);
         
         this.config = this.core.config;
         this.log = this.core.log.bind(this.core);
@@ -68,6 +70,14 @@ class PluginAPI {
         this.sendKeepAlive = this.miscModule.sendKeepAlive.bind(this.miscModule);
         this.sendCustomPayload = this.miscModule.sendCustomPayload.bind(this.miscModule);
         this.sendLogin = this.miscModule.sendLogin.bind(this.miscModule);
+        
+        // hypixel methods
+        this.getPartyInfo = this.hypixelModule.getPartyInfo.bind(this.hypixelModule);
+        this.getPartyInfoAsync = this.hypixelModule.getPartyInfoAsync.bind(this.hypixelModule);
+        this.isInParty = this.hypixelModule.isInParty.bind(this.hypixelModule);
+        this.getPlayerRole = this.hypixelModule.getPlayerRole.bind(this.hypixelModule);
+        this.getPing = this.hypixelModule.getPing.bind(this.hypixelModule);
+        this.getPingAsync = this.hypixelModule.getPingAsync.bind(this.hypixelModule);
         
         // inventory/GUI methods
         this.openWindow = this.inventoryModule.openWindow.bind(this.inventoryModule);
@@ -836,6 +846,14 @@ class PluginAPI {
             sendTabComplete: withEnabledCheck(mainAPI.sendTabComplete, 'sendTabComplete'),
             sendCustomPayload: withEnabledCheck(mainAPI.sendCustomPayload, 'sendCustomPayload'),
             sendLogin: withEnabledCheck(mainAPI.sendLogin, 'sendLogin'),
+            
+            // hypixel methods
+            getPartyInfo: withEnabledCheck(mainAPI.getPartyInfo, 'getPartyInfo'),
+            getPartyInfoAsync: withEnabledCheck(mainAPI.getPartyInfoAsync, 'getPartyInfoAsync'),
+            isInParty: withEnabledCheck(mainAPI.isInParty, 'isInParty'),
+            getPlayerRole: withEnabledCheck(mainAPI.getPlayerRole, 'getPlayerRole'),
+            getPing: withEnabledCheck(mainAPI.getPing, 'getPing'),
+            getPingAsync: withEnabledCheck(mainAPI.getPingAsync, 'getPingAsync'),
             
             // inventory/GUI methods
             openWindow: withEnabledCheck(mainAPI.openWindow, 'openWindow'),
