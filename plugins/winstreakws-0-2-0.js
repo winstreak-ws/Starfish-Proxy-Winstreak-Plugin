@@ -3,12 +3,13 @@
 // Enables automatic checking and displaying winstreak.ws's data of players.
 
 const https = require('https');
+const { URL } = require('url');
 
 function httpsGet(url) {
     return new Promise((resolve, reject) => {
         const options = {
             headers: {
-                'User-Agent': 'Starfish-Proxy-Winstreak-Plugin/0.0.2 (WinstreakWS)'
+                'User-Agent': 'Starfish-Proxy-Winstreak-Plugin/0.2.0 (WinstreakWS)'
             }
         };
 
@@ -40,6 +41,54 @@ function httpsGet(url) {
     });
 }
 
+function httpsPost(url, postData) {
+    return new Promise((resolve, reject) => {
+        const postDataString = JSON.stringify(postData);
+        const urlObj = new URL(url);
+        
+        const options = {
+            hostname: urlObj.hostname,
+            port: urlObj.port || 443,
+            path: urlObj.pathname + urlObj.search,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postDataString),
+                'User-Agent': 'Starfish-Proxy-Winstreak-Plugin/0.0.2 (WinstreakWS)'
+            }
+        };
+
+        const req = https.request(options, (res) => {
+            let data = '';
+
+            res.on('data', (chunk) => {
+                data += chunk;
+            });
+
+            res.on('end', () => {
+                try {
+                    const jsonData = JSON.parse(data);
+                    resolve({ data: jsonData, status: res.statusCode });
+                } catch (error) {
+                    reject(new Error(`Failed to parse JSON: ${error.message}`));
+                }
+            });
+        });
+
+        req.on('error', (error) => {
+            reject(error);
+        });
+
+        req.setTimeout(10000, () => {
+            req.destroy();
+            reject(new Error('Request timeout'));
+        });
+
+        req.write(postDataString);
+        req.end();
+    });
+}
+
 const BASE_URL = 'https://api.winstreak.ws/';
 
 module.exports = (api) => {
@@ -47,7 +96,7 @@ module.exports = (api) => {
         name: 'winstreak',
         displayName: 'Winstreak.ws Integration',
         prefix: '§9W§fS',
-        version: '0.1.0',
+        version: '0.2.0',
         author: 'Qetrox@Winstreak.ws',
         minVersion: '0.1.7',
         description: 'Tab list stats + Enables automatic checking and displaying winstreak.ws\'s data of players.',
@@ -706,123 +755,100 @@ class WinstreakwsPlugin {
                     }
                 }
 
-                const allPlayerPromises = [];
-                let playersWithTags = 0;
+                // Collect all players to fetch
+                const playersToFetch = [];
+                const playerMappings = new Map(); // maps player identifier to player object
 
+                // Add resolved nicks (use UUIDs)
                 if (resolvedNicks.length > 0) {
                     resolvedNicks.forEach(realName => {
                         const player = this.api.getPlayerByName(realName);
-                        if (player) {
-                            const promise = Promise.all([
-                                this.fetchPlayerTags(player.uuid),
-                                this.fetchPlayerStats(player.uuid)
-                            ]).then(([tags, stats]) => {
-                                this.updatePlayerTags(player.uuid, tags);
-                                this.updatePlayerStats(player.uuid, stats);
-                                
-                                if (tags && tags.length > 0) {
-                                    playersWithTags++;
-
-                                    let formattedTags = [];
-                                    tags.forEach(tag => {
-                                        let color = getMinecraftColorByNumber(tag.color);
-                                        if (!this.api.config.get('ws_pl.customcolors.enabled')) color = '§9';
-                                        formattedTags.push({
-                                            text: `${color}${tag.name}§r`,
-                                            hoverEvent: tag.description ? {
-                                                action: 'show_text',
-                                                value: tag.description
-                                            } : undefined
-                                        });
-                                    });
-
-                                    if (this.api.config.get('ws_pl.alerts.enabled')) {
-                                        // Chat message with hover for each tag
-                                        let message = {
-                                            text: `${this.PLUGIN_PREFIX}§r ${player.username} has the following tags: `,
-                                            extra: []
-                                        };
-                                        formattedTags.forEach((tagObj, idx) => {
-                                            if (idx > 0) message.extra.push({ text: ' §7| §r' });
-                                            message.extra.push(tagObj);
-                                        });
-                                        this.api.chat(message);
-                                        if (this.api.config.get('ws_pl.alerts.audioAlerts.enabled')) {
-                                            this.api.sound('note.pling');
-                                        }
-                                    }
-                                }
-                                return tags;
-                            }).catch(err => {
-                                this.sendMessage(`§cError fetching tags for ${realName}: ${err.message}`);
-                                return null;
-                            });
-                            allPlayerPromises.push(promise);
+                        if (player && player.uuid) {
+                            playersToFetch.push(player.uuid);
+                            playerMappings.set(player.uuid, { player, isNick: true });
                         }
                     });
                 }
 
+                // Add unnicked players (use usernames)
                 const unnickedPlayers = usernames.filter(name => !nicks.includes(name));
                 if (unnickedPlayers.length > 0) {
                     unnickedPlayers.forEach(name => {
                         const player = this.api.getPlayerByName(name);
                         if (player) {
-                            const promise = Promise.all([
-                                this.fetchPlayerTags(name),
-                                this.fetchPlayerStats(name)
-                            ]).then(([tags, stats]) => {
-                                if (player && player.uuid) {
-                                    this.updatePlayerTags(player.uuid, tags);
-                                    this.updatePlayerStats(player.uuid, stats);
-                                }
-                                
-                                if (tags && tags.length > 0) {
-                                    playersWithTags++;
-
-                                    let formattedTags = [];
-                                    tags.forEach(tag => {
-                                        let color = getMinecraftColorByNumber(tag.color);
-                                        if (!this.api.config.get('ws_pl.customcolors.enabled')) color = '§9';
-                                        formattedTags.push({
-                                            text: `${color}${tag.name}§r`,
-                                            hoverEvent: tag.description ? {
-                                                action: 'show_text',
-                                                value: tag.description
-                                            } : undefined
-                                        });
-                                    });
-
-                                    if (this.api.config.get('ws_pl.alerts.enabled')) {
-                                        // Chat message with hover for each tag
-                                        let message = {
-                                            text: `${this.PLUGIN_PREFIX}§r ${name} has the following tags: `,
-                                            extra: []
-                                        };
-                                        formattedTags.forEach((tagObj, idx) => {
-                                            if (idx > 0) message.extra.push({ text: ' §7| §r' });
-                                            message.extra.push(tagObj);
-                                        });
-                                        this.api.chat(message);
-                                        if (this.api.config.get('ws_pl.alerts.audioAlerts.enabled')) {
-                                            this.api.sound('note.pling');
-                                        }
-                                    }
-                                }
-                                return tags;
-                            }).catch(err => {
-                                this.sendMessage(`§cError fetching tags for ${name}: ${err.message}`);
-                                return null;
-                            });
-                            allPlayerPromises.push(promise);
+                            playersToFetch.push(name);
+                            playerMappings.set(name, { player, isNick: false });
                         }
                     });
                 }
 
-                if (allPlayerPromises.length > 0) {
-                    Promise.all(allPlayerPromises).then(() => {
+                // Use batch fetch methods
+                if (playersToFetch.length > 0) {
+                    Promise.all([
+                        this.fetchMultiplePlayerTags(playersToFetch),
+                        this.fetchMultiplePlayerStats(playersToFetch)
+                    ]).then(([allTags, allStats]) => {
+                        let playersWithTags = 0;
+                        
+                        for (const [playerIdentifier, results] of Object.entries(allTags)) {
+                            const mapping = playerMappings.get(playerIdentifier);
+                            
+                            if (!mapping) continue;
+
+                            const { player } = mapping;
+                            const tags = results;
+                            const stats = allStats[playerIdentifier];
+
+                            // Update player data
+                            if (player.uuid) {
+                                this.updatePlayerTags(player.uuid, tags);
+                                if (stats) {
+                                    this.updatePlayerStats(player.uuid, stats);
+                                }
+                            }
+
+                            // Show alerts for players with tags
+                            if (tags && tags.length > 0) {
+                                playersWithTags++;
+
+                                let formattedTags = [];
+                                tags.forEach(tag => {
+                                    let color = getMinecraftColorByNumber(tag.color);
+                                    if (!this.api.config.get('ws_pl.customcolors.enabled')) color = '§9';
+                                    formattedTags.push({
+                                        text: `${color}${tag.name}§r`,
+                                        hoverEvent: tag.description ? {
+                                            action: 'show_text',
+                                            value: tag.description
+                                        } : undefined
+                                    });
+                                });
+
+                                if (this.api.config.get('ws_pl.alerts.enabled')) {
+                                    // Chat message with hover for each tag
+                                    const playerName = player.username || player.name || playerIdentifier;
+                                    let message = {
+                                        text: `${this.PLUGIN_PREFIX}§r ${playerName} has the following tags: `,
+                                        extra: []
+                                    };
+                                    formattedTags.forEach((tagObj, idx) => {
+                                        if (idx > 0) message.extra.push({ text: ' §7| §r' });
+                                        message.extra.push(tagObj);
+                                    });
+                                    this.api.chat(message);
+                                    if (this.api.config.get('ws_pl.alerts.audioAlerts.enabled')) {
+                                        this.api.sound('note.pling');
+                                    }
+                                }
+                            }
+                        }
+
                         if (playersWithTags === 0 && this.api.config.get('ws_pl.alerts.enabled')) {
                             this.sendMessage('§7No players with tags found.');
                         }
+                    }).catch(error => {
+                        console.error('Error processing batch player data:', error);
+                        this.sendMessage(`§cError processing player data: ${error.message}`);
                     });
                 }
             }
@@ -932,6 +958,125 @@ class WinstreakwsPlugin {
         } catch (error) {
             console.error(`Error fetching stats for player ${player}:`);
             return null;
+        }
+    }
+
+    async fetchMultiplePlayerTags(players) {
+        const apiKey = this.api.config.get('ws_pl.api.apikey');
+
+        if (!apiKey || apiKey.trim() === '') {
+            console.error('No API key set for batch tags request');
+            return {};
+        }
+
+        // Check cache first for all players
+        const results = {};
+        const playersToFetch = [];
+        
+        for (const player of players) {
+            const cacheKey = `tags:${player}`;
+            const cached = await this.cache.getKey(cacheKey);
+            if (cached) {
+                results[player] = cached;
+            } else {
+                playersToFetch.push(player);
+            }
+        }
+
+        // If all players are cached, return early
+        if (playersToFetch.length === 0) {
+            return results;
+        }
+
+        // Prepare URL with query parameters for tag settings
+        let url = `${BASE_URL}v1/player/tags?key=${encodeURIComponent(apiKey)}&color=true`;
+
+        // Add disabling tags
+        const blacklistEnabled = this.api.config.get('ws_pl.tags.blacklist.enabled');
+        const gapsEnabled = this.api.config.get('ws_pl.tags.gaps.enabled');
+        const naccEnabled = this.api.config.get('ws_pl.tags.nacc.enabled');
+        const pingEnabled = this.api.config.get('ws_pl.tags.ping.enabled');
+        const radarEnabled = this.api.config.get('ws_pl.tags.radar.enabled');
+        const rncEnabled = this.api.config.get('ws_pl.tags.rnc.enabled');
+        const stataccEnabled = this.api.config.get('ws_pl.tags.statacc.enabled');
+
+        if (!blacklistEnabled) url += '&blacklist=false';
+        if (!gapsEnabled) url += '&gaps=false';
+        if (!naccEnabled) url += '&nacc=false';
+        if (!pingEnabled) url += '&ping=false';
+        if (!radarEnabled) url += '&radar=false';
+        if (!rncEnabled) url += '&rnc=false';
+        if (!stataccEnabled) url += '&statacc=false';
+
+        try {
+            console.log(`[Winstreak] Fetching tags for ${playersToFetch.length} players using batch API`);
+            const response = await httpsPost(url, { players: playersToFetch });
+            
+            if (response.data && response.data.results) {
+                // Cache results and merge with existing cached results
+                for (const [player, playerData] of Object.entries(response.data.results)) {
+                    if (playerData && playerData.tags) {
+                        const cacheKey = `tags:${player}`;
+                        await this.cache.addKey(cacheKey, playerData.tags, 30 * 60 * 1000);
+                        results[player] = playerData.tags;
+                    }
+                }
+            }
+            
+            return results;
+        } catch (error) {
+            console.error(`Error fetching batch tags:`, error);
+            return results; // Return any cached results we had
+        }
+    }
+
+    async fetchMultiplePlayerStats(players) {
+        const apiKey = this.api.config.get('ws_pl.api.apikey');
+
+        if (!apiKey || apiKey.trim() === '') {
+            return {};
+        }
+
+        // Check cache first for all players
+        const results = {};
+        const playersToFetch = [];
+        
+        for (const player of players) {
+            const cacheKey = `stats:${player}`;
+            const cached = await this.cache.getKey(cacheKey);
+            if (cached) {
+                results[player] = cached;
+            } else {
+                playersToFetch.push(player);
+            }
+        }
+
+        // If all players are cached, return early
+        if (playersToFetch.length === 0) {
+            return results;
+        }
+
+        let url = `${BASE_URL}v1/player/bedwars/tabstats?key=${encodeURIComponent(apiKey)}`;
+
+        try {
+            console.log(`[Winstreak] Fetching stats for ${playersToFetch.length} players using batch API`);
+            const response = await httpsPost(url, { players: playersToFetch });
+            
+            if (response.data && response.data.results) {
+                // Cache results and merge with existing cached results
+                for (const [player, stats] of Object.entries(response.data.results)) {
+                    if (stats) {
+                        const cacheKey = `stats:${player}`;
+                        await this.cache.addKey(cacheKey, stats, 30 * 60 * 1000);
+                        results[player] = stats;
+                    }
+                }
+            }
+            
+            return results;
+        } catch (error) {
+            console.error(`Error fetching batch stats:`, error);
+            return results; // Return any cached results we had
         }
     }
 
@@ -1294,6 +1439,9 @@ class WinstreakwsPlugin {
         }
 
         // Re-fetch tags and stats for all players with new settings
+        const playersToFetch = [];
+        const playerUuidMapping = new Map();
+
         for (const uuid of playersToCheck) {
             // Try to get player name from API if possible
             let player = this.api.getPlayerByUUID ? this.api.getPlayerByUUID(uuid) : null;
@@ -1302,15 +1450,50 @@ class WinstreakwsPlugin {
                 player = allCurrentPlayers.find(p => p.uuid === uuid);
             }
             let playerName = player ? player.username || player.name : uuid;
-
-            // Fetch new tags and stats (by uuid or name)
-            const [tags, stats] = await Promise.all([
-                this.fetchPlayerTags(playerName),
-                this.fetchPlayerStats(playerName)
-            ]);
             
-            this.updatePlayerTags(uuid, tags);
-            this.updatePlayerStats(uuid, stats);
+            playersToFetch.push(playerName);
+            playerUuidMapping.set(playerName, uuid);
+        }
+
+        if (playersToFetch.length > 0) {
+            try {
+                const [allTags, allStats] = await Promise.all([
+                    this.fetchMultiplePlayerTags(playersToFetch),
+                    this.fetchMultiplePlayerStats(playersToFetch)
+                ]);
+
+                // Update player data
+                for (const playerName of playersToFetch) {
+                    const uuid = playerUuidMapping.get(playerName);
+                    const tags = allTags[playerName];
+                    const stats = allStats[playerName];
+                    
+                    this.updatePlayerTags(uuid, tags);
+                    this.updatePlayerStats(uuid, stats);
+                }
+            } catch (error) {
+                console.error('Error in batch re-fetch:', error);
+                // Fallback to individual requests if batch fails
+                for (const uuid of playersToCheck) {
+                    let player = this.api.getPlayerByUUID ? this.api.getPlayerByUUID(uuid) : null;
+                    if (!player) {
+                        player = allCurrentPlayers.find(p => p.uuid === uuid);
+                    }
+                    let playerName = player ? player.username || player.name : uuid;
+
+                    try {
+                        const [tags, stats] = await Promise.all([
+                            this.fetchPlayerTags(playerName),
+                            this.fetchPlayerStats(playerName)
+                        ]);
+                        
+                        this.updatePlayerTags(uuid, tags);
+                        this.updatePlayerStats(uuid, stats);
+                    } catch (err) {
+                        console.error(`Error fetching data for ${playerName}:`, err);
+                    }
+                }
+            }
         }
     }
 
