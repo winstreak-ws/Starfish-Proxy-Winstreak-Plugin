@@ -123,7 +123,7 @@ module.exports = (api) => {
                     key: 'ws_pl.api.apikey',
                     description: 'Enter your Winstreak API key.',
                     placeholder: 'API key',
-                    encrypted: true
+                    
                 }
             ]
         },
